@@ -131,10 +131,20 @@ impl CrtFilter {
         }
     }
 
+    /// The optics of a monochrome monitor (no mask, soft beam, glowing phosphor) with the
+    /// colors kept: a dreamy, forgiving look rather than a historical one.
+    pub fn soft_glow() -> Self {
+        Self {
+            monochrome: None,
+            ..Self::mono_monitor(Phosphor::White)
+        }
+    }
+
     /// The presets with a name each, in the order Alt+C cycles them (after "off").
-    pub fn presets() -> [(&'static str, CrtFilter); 5] {
+    pub fn presets() -> [(&'static str, CrtFilter); 6] {
         [
             ("crisp scanlines", Self::crisp()),
+            ("soft glow", Self::soft_glow()),
             ("VGA monitor", Self::vga_monitor()),
             ("TV", Self::tv()),
             ("green screen", Self::mono_monitor(Phosphor::Green)),
