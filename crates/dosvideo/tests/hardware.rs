@@ -213,3 +213,17 @@ fn bitmap_clips_offscreen_rects() {
     assert_eq!(b.get(319, 199), 2);
     assert_eq!(b.data.iter().filter(|&&p| p == 1).count(), 0);
 }
+
+#[test]
+fn dithering_mixes_two_colors_for_a_middle_gray() {
+    use game_toolkit_dosvideo::draw::Dither;
+    let pal = [[0u8, 0, 0], [255, 255, 255]];
+    let rgba: Vec<u8> = (0..16 * 16).flat_map(|_| [128u8, 128, 128, 255]).collect();
+    for d in [Dither::Bayer4, Dither::Bayer8, Dither::FloydSteinberg] {
+        let b = Bitmap::from_rgba(16, 16, &rgba, &pal, d);
+        let white = b.data.iter().filter(|&&p| p == 1).count();
+        assert!((96..=160).contains(&white), "{d:?}: {white} of 256 white");
+    }
+    let flat = Bitmap::from_rgba(16, 16, &rgba, &pal, Dither::None);
+    assert!(flat.data.iter().all(|&p| p == flat.data[0]));
+}

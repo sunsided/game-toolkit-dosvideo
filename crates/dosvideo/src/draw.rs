@@ -19,7 +19,128 @@ pub struct Bitmap {
     pub data: Vec<u8>,
 }
 
+/// How [`Bitmap::from_rgba`] spreads the error when a true-color pixel has no exact match in
+/// the palette.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Dither {
+    /// Nearest color: flat areas, visible banding.
+    #[default]
+    None,
+    /// Ordered dither with a 2x2 Bayer matrix: coarse checkerboards.
+    Bayer2,
+    /// Ordered dither with a 4x4 Bayer matrix: the classic crosshatch of 16-color games.
+    Bayer4,
+    /// Ordered dither with an 8x8 Bayer matrix: finer gradients.
+    Bayer8,
+    /// Floyd-Steinberg error diffusion: organic noise, best for photos, worst for animation.
+    FloydSteinberg,
+}
+
+const BAYER8: [[u8; 8]; 8] = [
+    [0, 32, 8, 40, 2, 34, 10, 42],
+    [48, 16, 56, 24, 50, 18, 58, 26],
+    [12, 44, 4, 36, 14, 46, 6, 38],
+    [60, 28, 52, 20, 62, 30, 54, 22],
+    [3, 35, 11, 43, 1, 33, 9, 41],
+    [51, 19, 59, 27, 49, 17, 57, 25],
+    [15, 47, 7, 39, 13, 45, 5, 37],
+    [63, 31, 55, 23, 61, 29, 53, 21],
+];
+
+/// Index of the palette color closest to `c` (weighted RGB distance).
+pub fn nearest_color(palette: &[[u8; 3]], c: [f32; 3]) -> u8 {
+    let mut best = 0;
+    let mut best_d = f32::MAX;
+    for (i, p) in palette.iter().enumerate() {
+        let dr = c[0] - p[0] as f32;
+        let dg = c[1] - p[1] as f32;
+        let db = c[2] - p[2] as f32;
+        let d = 2.0 * dr * dr + 4.0 * dg * dg + 3.0 * db * db;
+        if d < best_d {
+            best_d = d;
+            best = i;
+        }
+    }
+    best as u8
+}
+
 impl Bitmap {
+    /// Convert true-color RGBA8 pixels to palette indices, the way artwork was prepared for
+    /// 16- and 256-color modes. `palette` holds 8-bit RGB (see
+    /// [`crate::palette::CGA`] or [`Dos::dac`] scaled with [`crate::palette::dac6_to_8`]);
+    /// index `i` of the result is entry `i` of `palette`.
+    pub fn from_rgba(
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+        palette: &[[u8; 3]],
+        dither: Dither,
+    ) -> Self {
+        let mut b = Self::new(width, height);
+        if palette.is_empty() {
+            return b;
+        }
+        let px = |x: u32, y: u32| {
+            let i = ((y * width + x) * 4) as usize;
+            [rgba[i] as f32, rgba[i + 1] as f32, rgba[i + 2] as f32]
+        };
+        // How far an ordered dither may push a pixel: about one palette step.
+        let spread = 0.8 * 255.0 / (palette.len() as f32).cbrt();
+        match dither {
+            Dither::None | Dither::Bayer2 | Dither::Bayer4 | Dither::Bayer8 => {
+                let n = match dither {
+                    Dither::Bayer2 => 2,
+                    Dither::Bayer4 => 4,
+                    Dither::Bayer8 => 8,
+                    _ => 0,
+                };
+                for y in 0..height {
+                    for x in 0..width {
+                        let mut c = px(x, y);
+                        if let Some(s) = 8usize.checked_div(n) {
+                            // The 8x8 matrix contains the smaller ones at a stride, with values 0..n².
+                            let m = BAYER8[(y as usize % n) * s][(x as usize % n) * s] as f32;
+                            let t = ((m + 0.5) / (n * n) as f32 - 0.5) * spread;
+                            for ch in &mut c {
+                                *ch += t;
+                            }
+                        }
+                        b.data[(y * width + x) as usize] = nearest_color(palette, c);
+                    }
+                }
+            }
+            Dither::FloydSteinberg => {
+                let w = width as usize;
+                let mut err = vec![[0.0f32; 3]; w * 2];
+                for y in 0..height {
+                    let (cur, next) = err.split_at_mut(w);
+                    for x in 0..width as usize {
+                        let o = px(x as u32, y);
+                        let c = [o[0] + cur[x][0], o[1] + cur[x][1], o[2] + cur[x][2]];
+                        let i = nearest_color(palette, c);
+                        b.data[y as usize * w + x] = i;
+                        let p = palette[i as usize];
+                        for ch in 0..3 {
+                            let e = c[ch] - p[ch] as f32;
+                            if x + 1 < w {
+                                cur[x + 1][ch] += e * 7.0 / 16.0;
+                                next[x + 1][ch] += e * 1.0 / 16.0;
+                            }
+                            if x > 0 {
+                                next[x - 1][ch] += e * 3.0 / 16.0;
+                            }
+                            next[x][ch] += e * 5.0 / 16.0;
+                        }
+                    }
+                    let (cur, next) = err.split_at_mut(w);
+                    cur.copy_from_slice(next);
+                    next.fill([0.0; 3]);
+                }
+            }
+        }
+        b
+    }
+
     pub fn new(width: u32, height: u32) -> Self {
         Self {
             width,
