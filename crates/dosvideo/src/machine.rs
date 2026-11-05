@@ -5,6 +5,7 @@ use crate::crt::{Beam, Crt, FrameView, Scanout, Timing};
 use crate::hercules::Hercules;
 use crate::input::{Keyboard, Mouse};
 use crate::palette::Phosphor;
+use crate::speaker::PcSpeaker;
 use crate::svga::{Svga, VbeMode};
 use crate::vga::{Vga, VgaKind};
 
@@ -276,6 +277,7 @@ pub struct Dos {
     adapter: Adapter,
     /// BIOS teletype cursor (column, row).
     pub(crate) tty: (u32, u32),
+    pub(crate) speaker: PcSpeaker,
 }
 
 impl Dos {
@@ -316,6 +318,7 @@ impl Dos {
             exit: false,
             adapter: config.adapter,
             tty: (0, 0),
+            speaker: PcSpeaker::new(),
         };
         let mode = dos.video.bios_mode();
         dos.mouse
@@ -498,7 +501,10 @@ impl Dos {
         self.sync();
         match port {
             0x40 => self.pit_write(v),
+            0x42 => self.speaker.write_counter(self.now, v),
+            0x43 if v >> 6 == 2 => self.speaker.command(v),
             0x43 => self.pit_command(v),
+            0x61 => self.speaker.write_port61(self.now, v),
             _ => with_card!(&mut self.video, c => c.port_out(port, v)),
         }
         self.check_timing();
@@ -518,6 +524,7 @@ impl Dos {
         match port {
             0x40 => self.pit_read(),
             0x60 => self.keyboard.port60(),
+            0x61 => self.speaker.read_port61(self.now),
             _ => {
                 self.sync();
                 with_card!(&mut self.video, c => c.port_in(port, &beam))

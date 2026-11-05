@@ -1,7 +1,8 @@
 //! game-toolkit integration: run a [`DosGame`] in a window, or put a [`Dos`] screen into your
 //! own [`Game`] with [`DosScreen`].
 
-use std::sync::Mutex;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 
 use game_toolkit::prelude::*;
 
@@ -204,6 +205,9 @@ fn headless<G: DosGame>(config: DosConfig, path: &str) -> Result<()> {
     let mut last_frame = u64::MAX;
     let mut fired = vec![false; keys.len()];
     let mut guard = 0u64;
+    // DOSVIDEO_WAV=out.wav: also record the PC speaker.
+    let wav_path = std::env::var("DOSVIDEO_WAV").ok();
+    let mut audio: Vec<f32> = Vec::new();
     while dos.frames() - start < frames && !dos.exit_requested() {
         let f = dos.frames() - start;
         if f != last_frame {
@@ -229,10 +233,96 @@ fn headless<G: DosGame>(config: DosConfig, path: &str) -> Result<()> {
         }
         guard += 1;
         anyhow::ensure!(guard < 50_000_000, "program makes no progress");
+        if wav_path.is_some() {
+            dos.speaker_render(AUDIO_RATE, &mut audio);
+        } else {
+            dos.speaker_skip();
+        }
     }
     dos.sync();
     std::fs::write(path, dos.frame().to_png())?;
+    if let Some(p) = wav_path {
+        std::fs::write(p, wav16(&audio, AUDIO_RATE))?;
+    }
     Ok(())
+}
+
+/// Open an audio stream for the PC speaker (deferred until audio may start, on the web).
+fn start_speaker(ctx: &mut Context) -> Option<(SpeakerQueue, StreamHandle)> {
+    let audio = ctx.audio.as_mut()?;
+    let q = SpeakerQueue::default();
+    q.push(&vec![0.0; SpeakerQueue::PRIME]);
+    let feed = q.clone();
+    let opts = PlayOptions {
+        deferred: true,
+        ..Default::default()
+    };
+    match audio.play_stream_with(move |out: &mut [f32]| feed.fill(out), AUDIO_RATE, opts) {
+        Ok(h) => Some((q, h)),
+        Err(e) => {
+            eprintln!("PC speaker: no audio ({e})");
+            None
+        }
+    }
+}
+
+/// Output rate of the PC speaker.
+const AUDIO_RATE: u32 = 44_100;
+
+/// Mono 16-bit PCM WAV.
+#[cfg(not(target_arch = "wasm32"))]
+fn wav16(samples: &[f32], rate: u32) -> Vec<u8> {
+    let data = samples.len() as u32 * 2;
+    let mut w = Vec::with_capacity(44 + data as usize);
+    w.extend_from_slice(b"RIFF");
+    w.extend_from_slice(&(36 + data).to_le_bytes());
+    w.extend_from_slice(b"WAVEfmt ");
+    w.extend_from_slice(&16u32.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes());
+    w.extend_from_slice(&rate.to_le_bytes());
+    w.extend_from_slice(&(rate * 2).to_le_bytes());
+    w.extend_from_slice(&2u16.to_le_bytes());
+    w.extend_from_slice(&16u16.to_le_bytes());
+    w.extend_from_slice(b"data");
+    w.extend_from_slice(&data.to_le_bytes());
+    for s in samples {
+        w.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+    }
+    w
+}
+
+/// PC speaker samples handed from the emulation (rendered up to the machine clock each host
+/// frame) to the audio thread.
+#[derive(Clone, Default)]
+struct SpeakerQueue(Arc<Mutex<VecDeque<f32>>>);
+
+impl SpeakerQueue {
+    /// Keep at most this much queued: emulated and real time drift a little, and a backlog
+    /// would only add latency.
+    const MAX: usize = AUDIO_RATE as usize / 6;
+    /// Prime the queue with silence so the first host frames don't underrun.
+    const PRIME: usize = AUDIO_RATE as usize / 20;
+
+    fn push(&self, samples: &[f32]) {
+        let mut q = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        q.extend(samples);
+        let excess = q.len().saturating_sub(Self::MAX);
+        q.drain(..excess);
+    }
+
+    fn fill(&self, out: &mut [f32]) {
+        let mut q = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for o in out {
+            *o = q.pop_front().unwrap_or(0.0);
+        }
+    }
 }
 
 struct Runner<G: DosGame> {
@@ -246,6 +336,9 @@ struct Runner<G: DosGame> {
     /// Scripted key taps by host frame (`DOSVIDEO_KEYS`), for window screenshots.
     keys: Vec<(u64, u8)>,
     held: Vec<u8>,
+    /// Where the speaker goes, if audio is available.
+    audio: Option<(SpeakerQueue, StreamHandle)>,
+    audio_buf: Vec<f32>,
 }
 
 impl<G: DosGame> Game for Runner<G> {
@@ -262,7 +355,7 @@ impl<G: DosGame> Game for Runner<G> {
         screen.show_border = config.show_border;
         screen.integer_scale = config.integer_scale;
         screen.crt = config.crt;
-        // DOSVIDEO_CRT=0..5 picks a preset (0 = off), for trying them without code changes.
+        // DOSVIDEO_CRT=0..6 picks a preset (0 = off), for trying them without code changes.
         if let Some(i) = std::env::var("DOSVIDEO_CRT")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
@@ -288,6 +381,8 @@ impl<G: DosGame> Game for Runner<G> {
             host_frames: 0,
             keys: scripted_keys(),
             held: Vec::new(),
+            audio: start_speaker(ctx),
+            audio_buf: Vec::new(),
             window_shot,
         })
     }
@@ -330,6 +425,14 @@ impl<G: DosGame> Game for Runner<G> {
                 self.dos.idle_until(self.deadline);
                 break;
             }
+        }
+        // Hand the speaker output of this frame to the audio thread.
+        if let Some((q, _)) = &self.audio {
+            self.audio_buf.clear();
+            self.dos.speaker_render(AUDIO_RATE, &mut self.audio_buf);
+            q.push(&self.audio_buf);
+        } else {
+            self.dos.speaker_skip();
         }
         // Emulation can't keep up (or a step took very long): don't try to catch up later.
         if self.deadline - self.dos.now_ns() > 0.25e9 {

@@ -36,7 +36,7 @@ tasks:
       - sh: test -f crates/dosvideo/examples/{{.EXAMPLE}}.rs
         msg: "no demo named '{{.EXAMPLE}}' — see `task examples`"
     cmds:
-      - cargo run -p {{.CRATE}} --example {{.EXAMPLE}} --release {{.CLI_ARGS}}
+      - cargo run -p {{.CRATE}} --all-features --example {{.EXAMPLE}} --release {{.CLI_ARGS}}
 
   run:copper_bars:
     aliases: [run:copper-bars]
@@ -105,6 +105,13 @@ tasks:
       - task: run
         vars: {EXAMPLE: crt_dither}
 
+  run:pc_speaker:
+    desc: "Demo: PC speaker - piano, synthie tracker music, PLAY strings, effects, PWM samples"
+    aliases: [run:pc-speaker]
+    cmds:
+      - task: run
+        vars: {EXAMPLE: pc_speaker}
+
   run:text_mode:
     aliases: [run:text-mode]
     desc: "Demo: 80x25 text TUI: boxes, blink, cursor, custom character set, galactic alphabet"
@@ -125,12 +132,12 @@ tasks:
         msg: "cargo not found — install Rust from https://rustup.rs/"
     cmds:
       - mkdir -p {{.SHOT_DIR}}
-      - cargo build -p {{.CRATE}} --examples --release
+      - cargo build -p {{.CRATE}} --all-features --examples --release
       - |
         for f in crates/dosvideo/examples/*.rs; do
           ex=$(basename "$f" .rs)
           DOSVIDEO_SHOT="{{.SHOT_DIR}}/$ex.png" DOSVIDEO_SHOT_FRAMES={{.SHOT_FRAMES}} \
-            cargo run -q -p {{.CRATE}} --example "$ex" --release
+            cargo run -q -p {{.CRATE}} --all-features --example "$ex" --release
         done
 
   test:
@@ -188,6 +195,7 @@ tasks:
     cmds:
       - cargo fmt --all --check
       - cargo clippy --workspace --all-targets -- -D warnings
+      - cargo clippy --workspace --all-targets --all-features -- -D warnings
       - cargo clippy -p {{.CRATE}} --no-default-features --lib -- -D warnings
       - task: check:wasm
 

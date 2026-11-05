@@ -63,6 +63,9 @@ pub mod input;
 mod machine;
 pub mod palette;
 mod png;
+pub mod speaker;
+#[cfg(feature = "synth")]
+pub mod speaker_synth;
 pub mod svga;
 pub mod text;
 pub mod vga;
@@ -89,6 +92,7 @@ pub use host::{Aspect, DosConfig, DosGame, DosScreen, run};
 pub mod prelude {
     pub use crate::draw::{Bitmap, Dither, ModeX};
     pub use crate::palette::color;
+    pub use crate::speaker::Melody;
     pub use crate::{
         Adapter, Beam, BusTiming, CgaMonitor, Dos, Font, MachineConfig, Phosphor, Timing, cpu, sc,
     };

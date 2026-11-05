@@ -121,7 +121,8 @@ handler would fill, and `getch()` / `kbhit()` is the BIOS buffer.
 ## Looking like a CRT
 
 Pixel-sharp output is the default. `DosConfig::with_crt(CrtFilter::tv())` (or `Alt+C` at run
-time, cycling off → crisp scanlines → VGA monitor → TV → green screen → amber screen) adds a GPU
+time, cycling off → crisp scanlines → soft glow → VGA monitor → TV → green screen → amber screen)
+adds a GPU
 post-filter.
 The emulated frame has one row per *real* scanline (400 in mode 13h, 200 on a CGA, 350 on a
 Hercules card), so the filter can model the beam instead of faking it:
@@ -135,6 +136,8 @@ Hercules card), so the filter can model the beam instead of faking it:
   stripes or dots on the window's own pixels, the "subpixel" structure the eye fuses back
   together. It needs about 3 window pixels per triad and fades out below that.
 - **bloom**, **curvature**, **vignette**, rounded corners.
+- **soft glow** keeps the colors but uses a monochrome monitor's optics (no mask, soft beam,
+  glowing phosphor): not historical, but easy on the eyes.
 - **monochrome**: the green and amber screen presets show only brightness in the phosphor's
   color, like a color card on a cheap monochrome monitor.
 
@@ -151,6 +154,23 @@ Fonts: `Font::vga()` (8x16), `Font::ega()` (8x14), `Font::cga()` (8x8), and the 
 Galactic Alphabet of the Commander Keen games as `Font::sga()`, `Font::sga_ega()` and
 `Font::sga_cga()`: letters become galactic, everything else stays CP437. Load any of them into
 text mode with `dos.load_font(font, 0)`, or draw with `Bitmap::text`.
+
+## The PC speaker
+
+PIT channel 2 and port `0x61` are emulated on the machine clock, and the speaker output is
+rendered by integrating the cone position over every audio sample, then played through
+game-toolkit's audio (or written to a WAV in headless runs: `DOSVIDEO_WAV=out.wav`).
+
+- `dos.sound(hz)` / `dos.nosound()`: Turbo Pascal style, or program the ports yourself
+  (`OUT 43h,B6h`, the divisor to `42h`, bits 0+1 of `61h`). Port `61h` bit 4 toggles every
+  15 µs like the DRAM refresh that delay loops counted.
+- `Melody::new("T140 O3 L4 EEFG GFED ...")`: QBasic `PLAY` strings, in the background.
+- `dos.speaker_pwm(&samples, 11_025)`: digitized sound by bit-banging the speaker. It blocks
+  for the length of the sound, as it did.
+- With the `synth` feature, `speaker_synth::SpeakerTracker` plays a
+  [synthie](https://docs.rs/synthie) song (the tracker format of game-toolkit's chiptune synth)
+  on the speaker: chords and arpeggio cells become one-note-per-frame arpeggios, drums become
+  pitch sweeps and noise bursts.
 
 ## Running
 
@@ -169,11 +189,12 @@ Headless, for tests and screenshots: `DOSVIDEO_SHOT=out.png DOSVIDEO_SHOT_FRAMES
 cargo run --example copper_bars` writes the frame as PNG instead of opening a window, and
 `DOSVIDEO_KEYS=30:0x30,90:0x24` taps keys (by scancode) at given frames (also in window mode, counted in host frames). Those shots are the
 raw emulated frame; to capture the window with the CRT filter, use
-`DOSVIDEO_WINDOW_SHOT=out.png DOSVIDEO_WINDOW_SHOT_FRAMES=90`, and `DOSVIDEO_CRT=0..5` to pick
+`DOSVIDEO_WINDOW_SHOT=out.png DOSVIDEO_WINDOW_SHOT_FRAMES=90`, and `DOSVIDEO_CRT=0..6` to pick
 a preset. `dos.frame()`
 gives the last complete frame as RGBA anywhere, with `to_png()`.
 
-Without the default `toolkit` feature the crate has no dependencies at all: just the machine,
+Features: `toolkit` (default) for the game-toolkit host, `synth` for tracker music on the PC
+speaker. Without the default `toolkit` feature the crate has no dependencies at all: just the machine,
 for tests or for driving it from another frontend.
 
 ## Demos
@@ -196,6 +217,7 @@ task shots               # screenshot every demo headless into target/shots/
 | `hercules` | 720x348 wireframes with two-page flipping on the inverted retrace bit, phosphor colors, and MDA text attributes with the 9th-column rule. |
 | `svga` | VBE 640x480x8 fill benchmark (banked by pixel, column or row vs. LFB, with bank-switch counts), 640x480 hi-color, and 800x600 panning over a 1600x1200 virtual screen. |
 | `crt_dither` | A true-color scene reduced to EGA, CGA or 256 colors with each dither method, shown through the CRT presets (`Alt+C`) that blend the patterns. `G` switches the captions to the Standard Galactic Alphabet. |
+| `pc_speaker` | The PC speaker: a piano on the keyboard, synthie's `lazy_jones()` reduced to one square wave (`M`, voicings `V`), a QBasic `PLAY` tune (`Q`), frame-rate sound effects and PWM sample playback that freezes the screen (`P`). Needs the `synth` feature. |
 | `text_mode` | An 80x25 TUI: boxes and shadows, blink vs. bright backgrounds, cursor, a custom tile character set loaded into plane 2 (with animated water), the galactic alphabet (`G`), and 80x50. |
 
 ## Accuracy

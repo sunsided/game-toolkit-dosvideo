@@ -26,6 +26,8 @@ uninlined_format_args = "warn"
 [workspace.dependencies]
 game-toolkit = "0.10"
 env_logger = "0.11"
+# Same track as game-toolkit's `synth` feature; no audio I/O, just the sequencer.
+synthie = { version = "0.8", default-features = false, features = ["std", "arp"] }
 
 # Examples and debug builds: optimize dependencies so the demos run at full speed.
 [profile.dev.package."*"]
