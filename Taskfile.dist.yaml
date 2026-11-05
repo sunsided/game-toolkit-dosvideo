@@ -6,9 +6,6 @@ vars:
   PROFILE: '{{ .PROFILE | default "debug" }}'
   PROFILE_FLAG: '{{ if eq .PROFILE "release" }}--release{{ end }}'
 
-  # Demo for `task run`. Override: task run EXAMPLE=modex_scroll
-  EXAMPLE: '{{ .EXAMPLE | default "copper_bars" }}'
-
   # Headless screenshots: frames to run before capturing, and where the PNGs go.
   SHOT_FRAMES: '{{ .SHOT_FRAMES | default "120" }}'
   SHOT_DIR: '{{ .SHOT_DIR | default "target/shots" }}'
@@ -30,12 +27,76 @@ tasks:
       - cargo build --workspace --all-targets {{.PROFILE_FLAG}} {{.CLI_ARGS}}
 
   run:
-    desc: Run a demo (EXAMPLE=copper_bars by default; see `task examples`)
+    desc: Run a demo in release mode (EXAMPLE=copper_bars by default; or use run:<demo>)
+    vars:
+      EXAMPLE: '{{ .EXAMPLE | default "copper_bars" }}'
     preconditions:
       - sh: command -v cargo
         msg: "cargo not found — install Rust from https://rustup.rs/"
+      - sh: test -f crates/dosvideo/examples/{{.EXAMPLE}}.rs
+        msg: "no demo named '{{.EXAMPLE}}' — see `task examples`"
     cmds:
       - cargo run -p {{.CRATE}} --example {{.EXAMPLE}} --release {{.CLI_ARGS}}
+
+  run:copper_bars:
+    desc: "Demo: Mode 13h raster bars, palette cycling, sine scroller"
+    cmds:
+      - task: run
+        vars: {EXAMPLE: copper_bars}
+
+  run:palette_cycling:
+    desc: "Demo: Animation by palette rotation alone; mid-frame DAC seam on ISA8"
+    cmds:
+      - task: run
+        vars: {EXAMPLE: palette_cycling}
+
+  run:modex_scroll:
+    desc: "Demo: Mode X: hardware scrolling, split-screen status bar, page flipping"
+    cmds:
+      - task: run
+        vars: {EXAMPLE: modex_scroll}
+
+  run:tearing_lab:
+    desc: "Demo: Full-frame copies on ISA8/ISA16/VLB/PCI with different sync strategies"
+    cmds:
+      - task: run
+        vars: {EXAMPLE: tearing_lab}
+
+  run:ega_scroller:
+    desc: "Demo: EGA smooth scrolling with pel panning and latch tile copies"
+    cmds:
+      - task: run
+        vars: {EXAMPLE: ega_scroller}
+
+  run:cga_showcase:
+    desc: "Demo: CGA palettes, composite artifact colors, 160x100 tweak, snow"
+    cmds:
+      - task: run
+        vars: {EXAMPLE: cga_showcase}
+
+  run:tandy:
+    desc: "Demo: Tandy 16-color modes and gate-array palette"
+    cmds:
+      - task: run
+        vars: {EXAMPLE: tandy}
+
+  run:hercules:
+    desc: "Demo: Hercules 720x348 page flipping, phosphors, MDA text"
+    cmds:
+      - task: run
+        vars: {EXAMPLE: hercules}
+
+  run:svga:
+    desc: "Demo: VESA SVGA: banked vs. linear framebuffer, hi-color, panning"
+    cmds:
+      - task: run
+        vars: {EXAMPLE: svga}
+
+  run:text_mode:
+    desc: "Demo: 80x25 text TUI: boxes, blink, cursor, custom character set"
+    cmds:
+      - task: run
+        vars: {EXAMPLE: text_mode}
 
   examples:
     desc: List the demos
