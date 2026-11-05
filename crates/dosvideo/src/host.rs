@@ -152,7 +152,10 @@ pub fn run<G: DosGame>(config: DosConfig) -> Result<()> {
 fn print_keys(config: &DosConfig) {
     let host = [
         ("Alt+Enter", "fullscreen"),
-        ("Alt+C", "CRT filter: off, crisp, VGA monitor, TV, mono"),
+        (
+            "Alt+C",
+            "CRT filter: off, crisp, VGA monitor, TV, green screen, amber screen",
+        ),
     ];
     let width = config
         .keys
@@ -259,7 +262,7 @@ impl<G: DosGame> Game for Runner<G> {
         screen.show_border = config.show_border;
         screen.integer_scale = config.integer_scale;
         screen.crt = config.crt;
-        // DOSVIDEO_CRT=0..4 picks a preset (0 = off), for trying them without code changes.
+        // DOSVIDEO_CRT=0..5 picks a preset (0 = off), for trying them without code changes.
         if let Some(i) = std::env::var("DOSVIDEO_CRT")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())

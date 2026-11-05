@@ -121,7 +121,8 @@ handler would fill, and `getch()` / `kbhit()` is the BIOS buffer.
 ## Looking like a CRT
 
 Pixel-sharp output is the default. `DosConfig::with_crt(CrtFilter::tv())` (or `Alt+C` at run
-time, cycling off → crisp scanlines → VGA monitor → TV → mono monitor) adds a GPU post-filter.
+time, cycling off → crisp scanlines → VGA monitor → TV → green screen → amber screen) adds a GPU
+post-filter.
 The emulated frame has one row per *real* scanline (400 in mode 13h, 200 on a CGA, 350 on a
 Hercules card), so the filter can model the beam instead of faking it:
 
@@ -134,6 +135,8 @@ Hercules card), so the filter can model the beam instead of faking it:
   stripes or dots on the window's own pixels, the "subpixel" structure the eye fuses back
   together. It needs about 3 window pixels per triad and fades out below that.
 - **bloom**, **curvature**, **vignette**, rounded corners.
+- **monochrome**: the green and amber screen presets show only brightness in the phosphor's
+  color, like a color card on a cheap monochrome monitor.
 
 Every knob is a field of `CrtFilter`. With `DosScreen` in your own game, set `screen.crt` and
 call `screen.draw_crt(&ctx.gfx, frame)` after the painter for the frame is dropped.
@@ -166,7 +169,7 @@ Headless, for tests and screenshots: `DOSVIDEO_SHOT=out.png DOSVIDEO_SHOT_FRAMES
 cargo run --example copper_bars` writes the frame as PNG instead of opening a window, and
 `DOSVIDEO_KEYS=30:0x30,90:0x24` taps keys (by scancode) at given frames (also in window mode, counted in host frames). Those shots are the
 raw emulated frame; to capture the window with the CRT filter, use
-`DOSVIDEO_WINDOW_SHOT=out.png DOSVIDEO_WINDOW_SHOT_FRAMES=90`, and `DOSVIDEO_CRT=0..4` to pick
+`DOSVIDEO_WINDOW_SHOT=out.png DOSVIDEO_WINDOW_SHOT_FRAMES=90`, and `DOSVIDEO_CRT=0..5` to pick
 a preset. `dos.frame()`
 gives the last complete frame as RGBA anywhere, with `to_png()`.
 

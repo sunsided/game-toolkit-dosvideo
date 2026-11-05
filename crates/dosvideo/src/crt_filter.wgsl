@@ -14,6 +14,7 @@ struct Params {
     beam: vec4<f32>,    // scanline strength, beam width min, beam width max, horizontal sigma
     mask: vec4<f32>,    // type (0 none, 1 grille, 2 slot, 3 dots), strength, pitch px, brightness
     fx: vec4<f32>,      // bloom, curvature, vignette, corner radius
+    mono: vec4<f32>,    // phosphor color (linear), w = 1: show brightness only
 };
 
 @group(0) @binding(0) var src: texture_2d<f32>;
@@ -152,6 +153,11 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         }
         g = g / 24.0;
         col = col + g * g * bloom * 2.0;
+    }
+
+    // A monochrome monitor shows brightness in its phosphor color.
+    if (u.mono.w > 0.5) {
+        col = vec3<f32>(luma(col)) * u.mono.rgb;
     }
 
     // Phosphor mask, fading out when it would be finer than the window can show.

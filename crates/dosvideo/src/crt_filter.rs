@@ -5,6 +5,8 @@
 
 use game_toolkit::prelude::*;
 
+use crate::palette::Phosphor;
+
 /// The phosphor arrangement behind the glass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum PhosphorMask {
@@ -46,6 +48,9 @@ pub struct CrtFilter {
     pub vignette: f32,
     /// Corner rounding as a fraction of the picture height.
     pub corner_radius: f32,
+    /// A monochrome monitor: show only brightness, in this phosphor's color. A color adapter
+    /// on a green or amber screen looked like this (colors became shades).
+    pub monochrome: Option<Phosphor>,
 }
 
 impl CrtFilter {
@@ -64,6 +69,7 @@ impl CrtFilter {
             curvature: 0.0,
             vignette: 0.0,
             corner_radius: 0.0,
+            monochrome: None,
         }
     }
 
@@ -82,6 +88,7 @@ impl CrtFilter {
             curvature: 0.02,
             vignette: 0.2,
             corner_radius: 0.02,
+            monochrome: None,
         }
     }
 
@@ -100,11 +107,13 @@ impl CrtFilter {
             curvature: 0.07,
             vignette: 0.4,
             corner_radius: 0.06,
+            monochrome: None,
         }
     }
 
-    /// A monochrome monitor (Hercules, MDA): no mask, long-glowing phosphor.
-    pub fn mono_monitor() -> Self {
+    /// A monochrome monitor (Hercules, MDA, or a color card on a cheap green or amber screen):
+    /// no mask, a long-glowing phosphor, and only shades of the phosphor color.
+    pub fn mono_monitor(phosphor: Phosphor) -> Self {
         Self {
             scanlines: 0.6,
             beam_min: 0.3,
@@ -118,27 +127,41 @@ impl CrtFilter {
             curvature: 0.03,
             vignette: 0.25,
             corner_radius: 0.03,
+            monochrome: Some(phosphor),
         }
     }
 
     /// The presets with a name each, in the order Alt+C cycles them (after "off").
-    pub fn presets() -> [(&'static str, CrtFilter); 4] {
+    pub fn presets() -> [(&'static str, CrtFilter); 5] {
         [
             ("crisp scanlines", Self::crisp()),
             ("VGA monitor", Self::vga_monitor()),
             ("TV", Self::tv()),
-            ("mono monitor", Self::mono_monitor()),
+            ("green screen", Self::mono_monitor(Phosphor::Green)),
+            ("amber screen", Self::mono_monitor(Phosphor::Amber)),
         ]
     }
 
-    fn uniforms(&self, rect: [f32; 4], tex: [f32; 2], region: [f32; 4]) -> [u8; 96] {
+    fn uniforms(&self, rect: [f32; 4], tex: [f32; 2], region: [f32; 4]) -> [u8; UNIFORM_SIZE] {
         let mask = match self.mask {
             PhosphorMask::None => 0.0,
             PhosphorMask::ApertureGrille => 1.0,
             PhosphorMask::SlotMask => 2.0,
             PhosphorMask::ShadowMask => 3.0,
         };
-        let v: [f32; 24] = [
+        // The phosphor color in linear light, w = 1 when monochrome is on.
+        let mono = self.monochrome.map_or([0.0; 4], |p| {
+            let c = p.bright().map(|v| {
+                let s = v as f32 / 255.0;
+                if s <= 0.04045 {
+                    s / 12.92
+                } else {
+                    ((s + 0.055) / 1.055).powf(2.4)
+                }
+            });
+            [c[0], c[1], c[2], 1.0]
+        });
+        let v: [f32; UNIFORM_SIZE / 4] = [
             rect[0],
             rect[1],
             rect[2],
@@ -163,14 +186,21 @@ impl CrtFilter {
             self.curvature,
             self.vignette,
             self.corner_radius,
+            mono[0],
+            mono[1],
+            mono[2],
+            mono[3],
         ];
-        let mut out = [0u8; 96];
+        let mut out = [0u8; UNIFORM_SIZE];
         for (i, f) in v.iter().enumerate() {
             out[i * 4..i * 4 + 4].copy_from_slice(&f.to_le_bytes());
         }
         out
     }
 }
+
+/// Bytes of the `Params` uniform block in the shader: 7 x vec4<f32>.
+const UNIFORM_SIZE: usize = 112;
 
 /// GPU resources of the filter.
 pub(crate) struct CrtPass {
@@ -260,7 +290,7 @@ impl CrtPass {
         });
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("dosvideo.crt.uniforms"),
-            size: 96,
+            size: UNIFORM_SIZE as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
