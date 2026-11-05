@@ -27,14 +27,19 @@ const W: i32 = 448;
 /// Bytes per row in each plane.
 const PITCH: u32 = W as u32 / 4;
 const VIEW_W: i32 = 320;
+/// Rows of the playfield visible above the split (where the sprites bounce).
 const PLAY_H: i32 = 216;
+/// Rows of each page in video memory: the full screen height, so that with the split off the
+/// bottom of the page is playfield, not whatever memory follows it (the other page on page 0,
+/// empty memory on page 1 - flickering as the pages flip).
+const PAGE_H: i32 = 240;
 const STATUS_H: i32 = 24;
 /// The status bar lives at address 0, where the CRTC restarts after the split.
 const STATUS_BASE: u32 = 0;
 /// The two playfield pages, right after the status bar.
 const PAGE_BASE: [u32; 2] = [
     STATUS_H as u32 * PITCH,
-    STATUS_H as u32 * PITCH + PLAY_H as u32 * PITCH,
+    STATUS_H as u32 * PITCH + PAGE_H as u32 * PITCH,
 ];
 const MAX_SCROLL: i32 = W - VIEW_W;
 /// Mode X is double scanned (480 scanlines for 240 rows), and the split starts on the line
@@ -109,7 +114,7 @@ fn put(
 }
 
 fn playfield() -> Bitmap {
-    let mut b = Bitmap::new(W as u32, PLAY_H as u32);
+    let mut b = Bitmap::new(W as u32, PAGE_H as u32);
     // Sky gradient in custom palette entries.
     for y in 0..120 {
         b.hline(0, W - 1, y, SKY + (y / 8) as u8);
@@ -126,7 +131,7 @@ fn playfield() -> Bitmap {
         }
     }
     // Checkered ground.
-    for y in 140..PLAY_H {
+    for y in 140..PAGE_H {
         for x in 0..W {
             let c = if ((x / 16) + (y / 16)) % 2 == 0 {
                 6
@@ -209,7 +214,7 @@ impl Scroller {
             put(
                 dos,
                 PAGE_BASE[page],
-                PLAY_H,
+                PAGE_H,
                 &self.field,
                 region,
                 r.x,
@@ -225,7 +230,7 @@ impl Scroller {
             put(
                 dos,
                 PAGE_BASE[page],
-                PLAY_H,
+                PAGE_H,
                 &self.balls[i],
                 region,
                 x,
@@ -259,7 +264,7 @@ impl DosGame for Scroller {
         }
         let field = playfield();
         for base in PAGE_BASE {
-            put(dos, base, PLAY_H, &field, (0, 0, W, PLAY_H), 0, 0, None);
+            put(dos, base, PAGE_H, &field, (0, 0, W, PAGE_H), 0, 0, None);
         }
         let mut s = Self {
             field,
