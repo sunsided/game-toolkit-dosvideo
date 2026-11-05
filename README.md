@@ -42,6 +42,27 @@ fn main() -> anyhow::Result<()> {
 }
 ```
 
+## Gallery
+
+Captured from the running demos (`DOSVIDEO_WINDOW_SHOT`), some through a CRT preset.
+
+| | |
+|---|---|
+| ![copper_bars: rainbow logo over raster bars, mountains and a scrolling floor](docs/copper_bars.jpg) | ![palette_cycling: a sunset landscape with a waterfall, animated purely by palette rotation](docs/palette_cycling.png) |
+| **`copper_bars`**: raster bars by rewriting one DAC entry per scanline (VGA monitor filter) | **`palette_cycling`**: water, ripples and sun glow move without touching a pixel |
+| ![modex_scroll: a hardware-scrolled landscape with balls and a status bar](docs/modex_scroll.png) | ![tearing_lab: moving bars torn where the copy was overtaken by the beam](docs/tearing_lab.png) |
+| **`modex_scroll`**: Mode X 320x240, hardware scrolling, split-screen status bar, page flipping | **`tearing_lab`**: a full-frame copy on a 16-bit ISA bus, overtaken by the beam |
+| ![ega_scroller: a side-scroller level in 16 EGA colors](docs/ega_scroller.jpg) | ![cga_composite: the 16 CGA composite artifact colors as vertical bands](docs/cga_composite.jpg) |
+| **`ega_scroller`**: smooth scrolling with pel panning and latch tile copies (VGA monitor filter) | **`cga_showcase`**: 640x200 black-and-white patterns turned into composite artifact colors (TV filter) |
+| ![cga_160x100: a 16-color plasma in the 160x100 text-mode tweak](docs/cga_160x100.png) | ![tandy: a 16-color landscape with bouncing balls](docs/tandy.png) |
+| **`cga_showcase`**: 16 colors on a CGA via the 160x100 tweaked text mode | **`tandy`**: Tandy 1000 320x200 in 16 colors |
+| ![hercules: rotating wireframes on a Hercules card](docs/hercules.jpg) | ![hercules_text: MDA text attributes on an amber screen](docs/hercules_text.jpg) |
+| **`hercules`**: 720x348, drawn on the hidden page and flipped in vertical retrace (green screen filter) | **`hercules`**: MDA text attributes and the 9th-column rule (amber screen filter) |
+| ![svga_hicolor: a 65536-color gradient with a plasma window](docs/svga_hicolor.png) | ![crt_dither: a Bayer-dithered sunset and sphere through the TV filter](docs/crt_dither.jpg) |
+| **`svga`**: VBE 640x480 in 65536 colors | **`crt_dither`**: Bayer dithering to 16 colors, melted by the TV filter |
+| ![pc_speaker: a text-mode piano and pitch history](docs/pc_speaker.png) | ![text_mode with the Standard Galactic Alphabet](docs/text_mode_galactic.jpg) |
+| **`pc_speaker`**: piano, synthie tracker music on one square wave, PWM samples | **`text_mode`**: tile graphics and the Standard Galactic Alphabet in the character generator |
+
 ## The model: a clock, a bus and a beam
 
 A `Dos` is a machine with a clock. Everything costs time:
@@ -197,27 +218,6 @@ gives the last complete frame as RGBA anywhere, with `to_png()`.
 Features: `toolkit` (default) for the game-toolkit host, `synth` for tracker music on the PC
 speaker. Without the default `toolkit` feature the crate has no dependencies at all: just the machine,
 for tests or for driving it from another frontend.
-
-## Gallery
-
-Captured from the running demos (`DOSVIDEO_WINDOW_SHOT`), some through a CRT preset.
-
-| | |
-|---|---|
-| ![copper_bars: rainbow logo over raster bars, mountains and a scrolling floor](docs/copper_bars.jpg) | ![palette_cycling: a sunset landscape with a waterfall, animated purely by palette rotation](docs/palette_cycling.png) |
-| **`copper_bars`**: raster bars by rewriting one DAC entry per scanline (VGA monitor filter) | **`palette_cycling`**: water, ripples and sun glow move without touching a pixel |
-| ![modex_scroll: a hardware-scrolled landscape with balls and a status bar](docs/modex_scroll.png) | ![tearing_lab: moving bars torn where the copy was overtaken by the beam](docs/tearing_lab.png) |
-| **`modex_scroll`**: Mode X 320x240, hardware scrolling, split-screen status bar, page flipping | **`tearing_lab`**: a full-frame copy on a 16-bit ISA bus, overtaken by the beam |
-| ![ega_scroller: a side-scroller level in 16 EGA colors](docs/ega_scroller.jpg) | ![cga_composite: the 16 CGA composite artifact colors as vertical bands](docs/cga_composite.jpg) |
-| **`ega_scroller`**: smooth scrolling with pel panning and latch tile copies (VGA monitor filter) | **`cga_showcase`**: 640x200 black-and-white patterns turned into composite artifact colors (TV filter) |
-| ![cga_160x100: a 16-color plasma in the 160x100 text-mode tweak](docs/cga_160x100.png) | ![tandy: a 16-color landscape with bouncing balls](docs/tandy.png) |
-| **`cga_showcase`**: 16 colors on a CGA via the 160x100 tweaked text mode | **`tandy`**: Tandy 1000 320x200 in 16 colors |
-| ![hercules: rotating wireframes on a Hercules card](docs/hercules.jpg) | ![hercules_text: MDA text attributes on an amber screen](docs/hercules_text.jpg) |
-| **`hercules`**: 720x348, drawn on the hidden page and flipped in vertical retrace (green screen filter) | **`hercules`**: MDA text attributes and the 9th-column rule (amber screen filter) |
-| ![svga_hicolor: a 65536-color gradient with a plasma window](docs/svga_hicolor.png) | ![crt_dither: a Bayer-dithered sunset and sphere through the TV filter](docs/crt_dither.jpg) |
-| **`svga`**: VBE 640x480 in 65536 colors | **`crt_dither`**: Bayer dithering to 16 colors, melted by the TV filter |
-| ![pc_speaker: a text-mode piano and pitch history](docs/pc_speaker.png) | ![text_mode with the Standard Galactic Alphabet](docs/text_mode_galactic.jpg) |
-| **`pc_speaker`**: piano, synthie tracker music on one square wave, PWM samples | **`text_mode`**: tile graphics and the Standard Galactic Alphabet in the character generator |
 
 ## Demos
 

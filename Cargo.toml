@@ -7,6 +7,7 @@ version = "0.1.0"
 edition = "2024"
 license = "EUPL-1.2"
 repository = "https://github.com/sunsided/game-toolkit-dosvideo"
+homepage = "https://github.com/sunsided/game-toolkit-dosvideo"
 authors = ["Markus Mayer"]
 rust-version = "1.95"
 

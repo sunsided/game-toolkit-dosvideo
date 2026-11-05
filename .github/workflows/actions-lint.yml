@@ -1,0 +1,40 @@
+name: Workflow lint
+
+# Lint the GitHub Actions workflows themselves: actionlint (syntax, expressions, shellcheck of
+# run steps) and zizmor (security: pinning, permissions, injection, credential persistence).
+on:
+  push:
+    branches: [main]
+    paths: [".github/**"]
+  pull_request:
+    paths: [".github/**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  lint:
+    name: actionlint · zizmor
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: actionlint,shellcheck,zizmor
+
+      - name: actionlint
+        run: actionlint -color
+
+      - name: zizmor
+        run: zizmor --format plain .github/workflows
+        env:
+          # Lets zizmor resolve action refs (impostor commits, known-vulnerable versions).
+          GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,105 @@
+name: Release
+
+# Every `vX.Y.Z` tag (`cargo release X.Y.Z --execute --no-publish` creates and pushes one):
+#
+# 1. publishes the crate to crates.io with trusted publishing (OIDC, no stored token), unless
+#    that version is already there (e.g. the first release, published by hand), and
+# 2. creates the GitHub release, with the tag's CHANGELOG.md section as notes.
+#
+# Trusted publishing must be set up once on crates.io (crate settings -> Trusted Publishing):
+# repository sunsided/game-toolkit-dosvideo, workflow release.yml, environment crates-io.
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: read
+      # OIDC token for crates.io trusted publishing.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the tag matches the crate version
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          crate=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "game-toolkit-dosvideo") | .version')
+          if [ "$tag" != "$crate" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match the crate version $crate"
+            exit 1
+          fi
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            -A "game-toolkit-dosvideo release workflow (github.com/sunsided/game-toolkit-dosvideo)" \
+            "https://crates.io/api/v1/crates/game-toolkit-dosvideo/$crate")
+          if [ "$status" = "200" ]; then
+            echo "::notice::game-toolkit-dosvideo $crate is already on crates.io; not publishing"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Linux build deps
+        if: steps.version.outputs.published == 'false'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libdbus-1-dev libudev-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        if: steps.version.outputs.published == 'false'
+        with:
+          toolchain: stable
+
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+        if: steps.version.outputs.published == 'false'
+        id: auth
+
+      # No build cache here on purpose: a release must not be built from a cache that a
+      # pull request could have written.
+      - name: Publish
+        if: steps.version.outputs.published == 'false'
+        run: cargo publish -p game-toolkit-dosvideo --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  github-release:
+    name: GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      # `gh release create` writes to the repository.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Release notes are the tag's CHANGELOG.md section, with hard-wrapped lines joined
+      # (GitHub renders single newlines in release bodies as line breaks). Falls back to
+      # generated notes when the changelog has no section for this version.
+      - name: Create GitHub release
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            /^## \[/ { if (p) exit; if (index($0, "## [" v "]") == 1) { p = 1; next } }
+            !p { next }
+            /^$/ || /^#/ || /^- / { if (buf != "") print buf; buf = $0; if ($0 == "" || /^#/) { print buf; buf = "" }; next }
+            { sub(/^ +/, ""); buf = (buf == "" ? $0 : buf " " $0) }
+            END { if (buf != "") print buf }
+          ' CHANGELOG.md | sed -e '/./,$!d' > release-notes.md
+          if [ -s release-notes.md ]; then
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --verify-tag --notes-file release-notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}

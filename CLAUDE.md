@@ -39,3 +39,16 @@ User-facing docs: `README.md`; API docs in `crates/dosvideo/src/lib.rs`.
   DOSVIDEO_KEYS=frame:0xSC,... cargo run --release --example NAME`, or `task shots`.
 - Write a test for each hardware behavior you add, against the public API, in the style of
   `tests/hardware.rs` (render frames, sample pixels).
+
+## Releasing
+
+Tag-driven, see `release.toml` and `.github/workflows/release.yml`:
+
+- Write the release's notes under `## [Unreleased]` in `CHANGELOG.md`.
+- `task release VERSION=x.y.z` (`cargo release x.y.z --execute --no-publish`): bumps the
+  version, stamps the changelog, commits, tags `vx.y.z` and pushes.
+- The tag runs the release workflow: it publishes to crates.io through trusted publishing
+  (OIDC, environment `crates-io`, restricted to `v*` tags), skipping versions that are already
+  published, and creates the GitHub release from the changelog section.
+- Workflows are linted by actionlint and zizmor (`task lint:actions`, and in CI); actions are
+  pinned to commit SHAs, Dependabot keeps them current.

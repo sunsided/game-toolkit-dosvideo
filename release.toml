@@ -1,0 +1,29 @@
+# Config for `cargo release` (https://github.com/crate-ci/cargo-release).
+#
+# Install once:  cargo install cargo-release --locked
+#
+# Two ways to ship (pick one - don't do both, or you double-publish):
+#
+#   CI-driven (recommended; the token lives in GitHub, not on your laptop):
+#     cargo release 0.1.0 --execute --no-publish   # bump + commit + tag v0.1.0 + push
+#     -> pushing the tag triggers .github/workflows/release.yml, which publishes the crate
+#        and creates the GitHub release from the CHANGELOG.md section.
+#
+#   All local (needs CARGO_REGISTRY_TOKEN in your env, or `cargo login`):
+#     cargo release 0.1.0 --execute                # bump + commit + tag + push + publish
+#
+# CHANGELOG.md is stamped during the bump: `## [Unreleased]` becomes `## [X.Y.Z] - <date>`
+# under a fresh `[Unreleased]`, and the compare links are updated (the replacements live in
+# crates/dosvideo/Cargo.toml, [package.metadata.release]).
+#
+# Dry-run by dropping --execute; `task publish:dry` packages and verifies without uploading.
+
+shared-version = true
+
+# One commit and one `vX.Y.Z` tag.
+consolidate-commits = true
+tag-name = "v{{version}}"
+pre-release-commit-message = "Release {{version}}"
+
+# Only release from main.
+allow-branch = ["main"]
