@@ -357,10 +357,23 @@ fn on(b: bool) -> &'static str {
     if b { "on" } else { "off" }
 }
 
+const KEYS: &[(&str, &str)] = &[
+    ("Space", "next scene"),
+    ("1-5", "pick a scene"),
+    ("P", "modes 4/5: palette"),
+    ("I", "modes 4/5: intensity"),
+    ("B", "modes 4/5: background color"),
+    ("M", "mode 6: RGB / composite monitor"),
+    ("K", "mode 6: color burst on/off"),
+    ("H", "mode 6: composite hue"),
+    (
+        "S",
+        "160x100 / text: write only while the display is off (no snow)",
+    ),
+    ("Esc", "quit"),
+];
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    run::<Showcase>(DosConfig::new(
-        "CGA showcase",
-        Adapter::Cga(CgaMonitor::Rgb),
-    ))
+    run::<Showcase>(DosConfig::new("CGA showcase", Adapter::Cga(CgaMonitor::Rgb)).with_keys(KEYS))
 }

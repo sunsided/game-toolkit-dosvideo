@@ -281,7 +281,17 @@ impl DosGame for Tandy {
     }
 }
 
+const KEYS: &[(&str, &str)] = &[
+    (
+        "M",
+        "mode 9 (320x200x16) / 8 (160x200x16) / 0Ah (640x200x4)",
+    ),
+    ("P", "palette register cycling"),
+    ("F", "flash"),
+    ("Esc", "quit"),
+];
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    run::<Tandy>(DosConfig::new("Tandy 1000", Adapter::Tandy))
+    run::<Tandy>(DosConfig::new("Tandy 1000", Adapter::Tandy).with_keys(KEYS))
 }

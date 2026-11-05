@@ -310,9 +310,22 @@ impl DosGame for SvgaDemo {
     }
 }
 
+const KEYS: &[(&str, &str)] = &[
+    (
+        "1",
+        "640x480x8 fill benchmark (X/C/R/L: pixel rows, pixel columns, banked rows, LFB)",
+    ),
+    ("2", "640x480 hi-color"),
+    ("3", "800x600 panning (arrows, A auto-pan)"),
+    ("B", "bus: PCI / VLB / 16-bit ISA"),
+    ("Esc", "quit"),
+];
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
     run::<SvgaDemo>(
-        DosConfig::new("SVGA", Adapter::Svga { memory_kib: 2048 }).with_bus(BusTiming::PCI),
+        DosConfig::new("SVGA", Adapter::Svga { memory_kib: 2048 })
+            .with_bus(BusTiming::PCI)
+            .with_keys(KEYS),
     )
 }

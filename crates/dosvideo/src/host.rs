@@ -38,6 +38,9 @@ pub struct DosConfig {
     pub crt: Option<CrtFilter>,
     /// Upper bound on [`DosGame::step`] calls per host frame.
     pub max_steps_per_frame: u32,
+    /// The program's keys as `(key, what it does)`, printed to stdout by [`run`] together
+    /// with the host keys, so people know what to press.
+    pub keys: Vec<(String, String)>,
 }
 
 impl DosConfig {
@@ -51,6 +54,7 @@ impl DosConfig {
             integer_scale: false,
             crt: None,
             max_steps_per_frame: 2000,
+            keys: Vec::new(),
         }
     }
 
@@ -61,6 +65,15 @@ impl DosConfig {
 
     pub fn with_bus(mut self, bus: BusTiming) -> Self {
         self.machine.bus = bus;
+        self
+    }
+
+    /// Document the program's keys; [`run`] prints them at startup.
+    pub fn with_keys(mut self, keys: &[(&str, &str)]) -> Self {
+        self.keys = keys
+            .iter()
+            .map(|(k, d)| ((*k).to_string(), (*d).to_string()))
+            .collect();
         self
     }
 
@@ -122,6 +135,7 @@ pub fn run<G: DosGame>(config: DosConfig) -> Result<()> {
     if let Ok(path) = std::env::var("DOSVIDEO_SHOT") {
         return headless::<G>(config, &path);
     }
+    print_keys(&config);
     let app = AppConfig {
         title: config.title.clone(),
         width: config.window.0,
@@ -132,6 +146,29 @@ pub fn run<G: DosGame>(config: DosConfig) -> Result<()> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(config);
     game_toolkit::prelude::run::<Runner<G>>(app)
+}
+
+/// The key table printed at startup.
+fn print_keys(config: &DosConfig) {
+    let host = [
+        ("Alt+Enter", "fullscreen"),
+        ("Alt+C", "CRT filter: off, crisp, VGA monitor, TV, mono"),
+    ];
+    let width = config
+        .keys
+        .iter()
+        .map(|(k, _)| k.chars().count())
+        .chain(host.iter().map(|(k, _)| k.len()))
+        .max()
+        .unwrap_or(0);
+    println!("{}", config.title);
+    for (k, d) in &config.keys {
+        println!("  {k:<width$}  {d}");
+    }
+    println!("host:");
+    for (k, d) in host {
+        println!("  {k:<width$}  {d}");
+    }
 }
 
 /// `DOSVIDEO_KEYS=frame:scancode,...` (scancodes in hex with `0x` or decimal).

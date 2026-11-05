@@ -154,7 +154,8 @@ text mode with `dos.load_font(font, 0)`, or draw with `Bitmap::text`.
 `run::<G>(DosConfig)` opens a game-toolkit window. `DosGame::step` is one iteration of your
 main loop; the host calls it as often as emulated time allows, so a loop that waits for the
 retrace once runs at the mode's refresh rate (70 Hz in mode 13h, 60 Hz in Mode X, ~50 Hz on a
-Hercules card). Alt+Enter toggles fullscreen, Alt+C cycles the CRT filter. `DosConfig` picks the aspect (`Aspect::Crt` by
+Hercules card). Alt+Enter toggles fullscreen, Alt+C cycles the CRT filter. `DosConfig::with_keys(&[("B", "bars on/off"), ...])`
+documents your program's keys; `run` prints them to stdout at startup, with the host keys. `DosConfig` picks the aspect (`Aspect::Crt` by
 default, so the active area is 4:3 and mode 13h pixels are taller than wide), the overscan
 border, integer scaling and the CRT filter.
 

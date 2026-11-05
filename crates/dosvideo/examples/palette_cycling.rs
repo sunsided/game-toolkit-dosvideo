@@ -339,7 +339,16 @@ impl DosGame for Cycling {
     }
 }
 
+const KEYS: &[(&str, &str)] = &[
+    ("1", "landscape: waterfall, ripples, sun glow"),
+    ("2", "plasma"),
+    ("3", "fades (Space: flash white)"),
+    ("4", "mid-frame rotation on an ISA8 bus"),
+    ("T", "scene 4: rotate in vblank / mid-frame"),
+    ("Esc", "quit"),
+];
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    run::<Cycling>(DosConfig::new("palette cycling", Adapter::Vga))
+    run::<Cycling>(DosConfig::new("palette cycling", Adapter::Vga).with_keys(KEYS))
 }

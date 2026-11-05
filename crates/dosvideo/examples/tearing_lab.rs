@@ -133,7 +133,13 @@ impl DosGame for Lab {
     }
 }
 
+const KEYS: &[(&str, &str)] = &[
+    ("1-5", "bus: 8-bit ISA, 16-bit ISA, VLB, PCI, instant"),
+    ("S", "next sync strategy"),
+    ("Esc", "quit"),
+];
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    run::<Lab>(DosConfig::new("tearing lab", Adapter::Vga))
+    run::<Lab>(DosConfig::new("tearing lab", Adapter::Vga).with_keys(KEYS))
 }

@@ -245,7 +245,18 @@ fn on(b: bool) -> &'static str {
     if b { "on" } else { "off" }
 }
 
+const KEYS: &[(&str, &str)] = &[
+    ("B", "raster bars on/off"),
+    (
+        "T",
+        "raster timing: hblank (proper) / line start (naive) / jittery",
+    ),
+    ("O", "bars in the overscan border"),
+    ("P", "palette cycling on/off"),
+    ("Esc", "quit"),
+];
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    run::<Copper>(DosConfig::new("copper bars", Adapter::Vga))
+    run::<Copper>(DosConfig::new("copper bars", Adapter::Vga).with_keys(KEYS))
 }

@@ -182,7 +182,18 @@ impl DosGame for Demo {
     }
 }
 
+const KEYS: &[(&str, &str)] = &[
+    ("D", "dither: nearest, Bayer 2/4/8, Floyd-Steinberg"),
+    ("P", "palette: EGA 16 / CGA 4 / 256 cube"),
+    ("G", "galactic captions"),
+    ("Esc", "quit"),
+];
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    run::<Demo>(DosConfig::new("dithering on a CRT", Adapter::Vga).with_crt(CrtFilter::tv()))
+    run::<Demo>(
+        DosConfig::new("dithering on a CRT", Adapter::Vga)
+            .with_crt(CrtFilter::tv())
+            .with_keys(KEYS),
+    )
 }

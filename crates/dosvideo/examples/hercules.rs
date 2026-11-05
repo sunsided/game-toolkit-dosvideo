@@ -286,10 +286,14 @@ impl DosGame for Herc {
     }
 }
 
+const KEYS: &[(&str, &str)] = &[
+    ("T", "text / graphics"),
+    ("P", "phosphor: green, amber, white"),
+    ("V", "wait for retrace before flipping on/off"),
+    ("Esc", "quit"),
+];
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    run::<Herc>(DosConfig::new(
-        "Hercules",
-        Adapter::Hercules(Phosphor::Green),
-    ))
+    run::<Herc>(DosConfig::new("Hercules", Adapter::Hercules(Phosphor::Green)).with_keys(KEYS))
 }

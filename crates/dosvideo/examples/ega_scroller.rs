@@ -312,7 +312,14 @@ impl DosGame for Scroller {
     }
 }
 
+const KEYS: &[(&str, &str)] = &[
+    ("Left/Right", "scroll speed"),
+    ("J", "jitter (registers in the wrong order)"),
+    ("P", "day / night palette"),
+    ("Esc", "quit"),
+];
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    run::<Scroller>(DosConfig::new("EGA scroller", Adapter::Ega))
+    run::<Scroller>(DosConfig::new("EGA scroller", Adapter::Ega).with_keys(KEYS))
 }

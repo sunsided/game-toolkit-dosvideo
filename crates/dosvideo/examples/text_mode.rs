@@ -409,7 +409,16 @@ impl DosGame for TextUi {
     }
 }
 
+const KEYS: &[(&str, &str)] = &[
+    ("Arrows", "move the cursor and the hero"),
+    ("B", "blink vs. bright backgrounds"),
+    ("F", "custom tile font on/off"),
+    ("G", "Standard Galactic Alphabet"),
+    ("H", "80x25 / 80x50"),
+    ("Esc", "quit"),
+];
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    run::<TextUi>(DosConfig::new("text mode", Adapter::Vga))
+    run::<TextUi>(DosConfig::new("text mode", Adapter::Vga).with_keys(KEYS))
 }

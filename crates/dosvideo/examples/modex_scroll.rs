@@ -359,7 +359,17 @@ fn on(b: bool) -> &'static str {
     if b { "on" } else { "off" }
 }
 
+const KEYS: &[(&str, &str)] = &[
+    (
+        "T",
+        "tearing mode (draw on the visible page, no retrace wait)",
+    ),
+    ("S", "split screen on/off"),
+    ("R", "pel-panning reset below the split on/off"),
+    ("Esc", "quit"),
+];
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    run::<Scroller>(DosConfig::new("Mode X scroll", Adapter::Vga))
+    run::<Scroller>(DosConfig::new("Mode X scroll", Adapter::Vga).with_keys(KEYS))
 }
