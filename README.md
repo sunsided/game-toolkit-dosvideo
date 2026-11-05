@@ -143,7 +143,7 @@ task shots               # screenshot every demo headless into target/shots/
 
 | Demo | Shows |
 |------|-------|
-| `copper_bars` | Mode 13h raster bars (DAC entry 0 rewritten on every scanline, into the border too), palette cycling, a sine scroller copied as a band during vblank. `J` sloppy raster timing. |
+| `copper_bars` | Mode 13h raster bars at 400-scanline resolution (DAC entry 0 rewritten each line), palette cycling, a sine scroller. `T` cycles the raster loop: proper (write in the previous line's hblank), naive (write at line start: a lagging stripe on the left) and jittery (frayed edges). `O` lets the bars run into the overscan border. |
 | `palette_cycling` | Animation by palette rotation alone: a landscape with flowing water, lake ripples and a pulsing sun; a plasma; fades and flashes; and on an ISA8 bus, the seam left when DAC writes happen mid-frame (`T`). The overlay counts VRAM bytes per frame: 0. |
 | `modex_scroll` | Mode X 320x240: a 448-pixel-wide virtual screen with smooth scrolling (start address + pel panning), a split-screen status bar via line compare, and page-flipped sprites. `T` draws without flipping, `R` shows why pel-panning reset below the split matters. |
 | `tearing_lab` | A full mode 13h copy every frame. `1`-`5` pick the bus (ISA8 to PCI), `S` picks no wait / vsync / racing the beam. Shows why ISA tears and local bus doesn't. |

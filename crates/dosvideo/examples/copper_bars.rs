@@ -1,12 +1,25 @@
 //! Mode 13h raster bars, palette cycling and a sine scroller.
 //!
-//! The "sky" is color 0, and so is the overscan border. Every scanline the program waits for
-//! the beam and rewrites DAC entry 0, so the bars run across the whole screen including the
-//! border, at 400-line resolution (mode 13h is double-scanned: each pixel row is two
-//! scanlines, and the DAC does not care).
+//! The "sky" is color 0. Every scanline the program rewrites DAC entry 0, so the bars show
+//! wherever color 0 is, at 400-line resolution (mode 13h is double-scanned: each pixel row is
+//! two scanlines, and the DAC does not care).
 //!
-//! Keys: `B` bars on/off, `J` sloppy timing (the DAC write lands mid-line: jagged bar edges,
-//! like a too-slow raster routine), `P` palette cycling on/off, `Esc` quit.
+//! *When* the write happens is everything. `T` cycles three versions of the raster loop:
+//!
+//! - **hblank** (the proper one): write during the horizontal blank of the *previous* line.
+//!   The three port writes to 0x3C9 are done before the line starts: clean bars.
+//! - **line start** (naive): wait for the line, then write. The writes take over a
+//!   microsecond, the beam is already drawing, and the first ~15 pixels of every line still
+//!   show the old color: a ragged stripe down the left side.
+//! - **jittery** (too slow): the routine does some work before each write that takes a
+//!   varying amount of time, so every line changes color somewhere else: frayed edges.
+//!
+//! The overscan border normally shows a black DAC entry. Point it at entry 0 (`O`) and the
+//! bars run into the border, a classic demo trick. Note the left border is scanned at the end
+//! of the previous line, so there each bar starts one scanline late, as on real hardware.
+//!
+//! Keys: `B` bars on/off, `T` raster timing, `O` bars in the overscan border, `P` palette
+//! cycling on/off, `Esc` quit.
 
 use game_toolkit_dosvideo::prelude::*;
 
@@ -15,13 +28,41 @@ const FLOOR_LAST: u8 = 79;
 const LOGO_FIRST: u8 = 96;
 const LOGO_LAST: u8 = 127;
 const SCROLL_TOP: u32 = 150;
+/// A DAC entry the default palette leaves black, for the border.
+const BLACK: u8 = 255;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RasterTiming {
+    Hblank,
+    LineStart,
+    Jittery,
+}
+
+impl RasterTiming {
+    fn next(self) -> Self {
+        match self {
+            Self::Hblank => Self::LineStart,
+            Self::LineStart => Self::Jittery,
+            Self::Jittery => Self::Hblank,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Hblank => "hblank (proper)",
+            Self::LineStart => "line start (naive)",
+            Self::Jittery => "jittery (too slow)",
+        }
+    }
+}
 
 struct Copper {
     background: Bitmap,
     back: Bitmap,
     t: u32,
     bars: bool,
-    sloppy: bool,
+    timing: RasterTiming,
+    border_bars: bool,
     cycle: bool,
     rng: u32,
 }
@@ -36,6 +77,9 @@ fn bar_color(line: u32, t: u32) -> [u8; 3] {
         let d = (line as f32 - center).abs();
         if d < 14.0 {
             let k = 1.0 - d / 14.0;
+            // Every other scanline a shade darker: proof the bars have 400-line resolution
+            // in a 200-line mode, and any write that lands a line late flips the stripes.
+            let k = if line % 2 == 1 { k * 0.7 } else { k };
             for ch in 0..3 {
                 c[ch] = c[ch].max((tint[ch] as f32 * k) as u8);
             }
@@ -47,6 +91,7 @@ fn bar_color(line: u32, t: u32) -> [u8; 3] {
 impl DosGame for Copper {
     fn init(dos: &mut Dos) -> anyhow::Result<Self> {
         dos.set_mode(0x13);
+        dos.set_border(BLACK);
         // Floor stripes: two shades alternating in 16 entries, cycled every frame.
         for i in 0..16u8 {
             let v = if i < 8 { 12 + i * 3 } else { 8 };
@@ -101,7 +146,8 @@ impl DosGame for Copper {
             background: bg,
             t: 0,
             bars: true,
-            sloppy: false,
+            timing: RasterTiming::Hblank,
+            border_bars: false,
             cycle: true,
             rng: 1,
         })
@@ -112,21 +158,36 @@ impl DosGame for Copper {
             match k.scan {
                 sc::ESC => dos.exit(),
                 sc::B => self.bars = !self.bars,
-                sc::J => self.sloppy = !self.sloppy,
+                sc::T => self.timing = self.timing.next(),
+                sc::O => {
+                    self.border_bars = !self.border_bars;
+                    dos.set_border(if self.border_bars { 0 } else { BLACK });
+                }
                 sc::P => self.cycle = !self.cycle,
                 _ => {}
             }
         }
 
         // 1. Race the beam: a new color 0 for each of the 400 scanlines.
-        let lines = dos.timing().v_active;
+        let timing = dos.timing();
         if self.bars {
-            for line in 0..lines {
-                dos.wait_line(line);
-                if self.sloppy {
-                    // A raster routine that sometimes takes too long before the write.
-                    self.rng = self.rng.wrapping_mul(1_103_515_245).wrapping_add(12345);
-                    dos.cpu(((self.rng >> 16) % 900) as u64);
+            for line in 0..timing.v_active {
+                let prev = if line == 0 {
+                    timing.v_total - 1
+                } else {
+                    line - 1
+                };
+                match self.timing {
+                    // Hblank of the line before: the color is in place when this line starts.
+                    RasterTiming::Hblank => dos.wait_beam(prev, timing.h_active),
+                    // Too late: the beam is already drawing this line while we write.
+                    RasterTiming::LineStart => dos.wait_line(line),
+                    // Some work of varying length between the wait and the write.
+                    RasterTiming::Jittery => {
+                        dos.wait_beam(prev, timing.h_active);
+                        self.rng = self.rng.wrapping_mul(1_103_515_245).wrapping_add(12345);
+                        dos.cpu(80 + ((self.rng >> 16) % 900) as u64);
+                    }
                 }
                 let c = bar_color(line, self.t);
                 dos.set_palette(0, c);
@@ -164,10 +225,11 @@ impl DosGame for Copper {
 
     fn overlay(&mut self, dos: &Dos, p: &mut Painter<'_>, screen: [f32; 4]) {
         let s = format!(
-            "mode 13h  {:.2} Hz   B bars:{}  J sloppy:{}  P cycle:{}",
+            "mode 13h  {:.2} Hz   B bars:{}  T timing: {}  O border:{}  P cycle:{}",
             dos.refresh_hz(),
             on(self.bars),
-            on(self.sloppy),
+            self.timing.name(),
+            on(self.border_bars),
             on(self.cycle)
         );
         p.text(
