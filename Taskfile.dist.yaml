@@ -29,7 +29,7 @@ tasks:
   run:
     desc: Run a demo in release mode (EXAMPLE=copper_bars by default; or use run:<demo>)
     vars:
-      EXAMPLE: '{{ .EXAMPLE | default "copper_bars" }}'
+      EXAMPLE: '{{ .EXAMPLE | default "copper_bars" | replace "-" "_" }}'
     preconditions:
       - sh: command -v cargo
         msg: "cargo not found — install Rust from https://rustup.rs/"
@@ -39,36 +39,42 @@ tasks:
       - cargo run -p {{.CRATE}} --example {{.EXAMPLE}} --release {{.CLI_ARGS}}
 
   run:copper_bars:
+    aliases: [run:copper-bars]
     desc: "Demo: Mode 13h raster bars, palette cycling, sine scroller"
     cmds:
       - task: run
         vars: {EXAMPLE: copper_bars}
 
   run:palette_cycling:
+    aliases: [run:palette-cycling]
     desc: "Demo: Animation by palette rotation alone; mid-frame DAC seam on ISA8"
     cmds:
       - task: run
         vars: {EXAMPLE: palette_cycling}
 
   run:modex_scroll:
+    aliases: [run:modex-scroll]
     desc: "Demo: Mode X: hardware scrolling, split-screen status bar, page flipping"
     cmds:
       - task: run
         vars: {EXAMPLE: modex_scroll}
 
   run:tearing_lab:
+    aliases: [run:tearing-lab]
     desc: "Demo: Full-frame copies on ISA8/ISA16/VLB/PCI with different sync strategies"
     cmds:
       - task: run
         vars: {EXAMPLE: tearing_lab}
 
   run:ega_scroller:
+    aliases: [run:ega-scroller]
     desc: "Demo: EGA smooth scrolling with pel panning and latch tile copies"
     cmds:
       - task: run
         vars: {EXAMPLE: ega_scroller}
 
   run:cga_showcase:
+    aliases: [run:cga-showcase]
     desc: "Demo: CGA palettes, composite artifact colors, 160x100 tweak, snow"
     cmds:
       - task: run
@@ -93,12 +99,14 @@ tasks:
         vars: {EXAMPLE: svga}
 
   run:crt_dither:
+    aliases: [run:crt-dither]
     desc: "Demo: Dithering (Bayer, Floyd-Steinberg) through CRT filter presets; galactic captions"
     cmds:
       - task: run
         vars: {EXAMPLE: crt_dither}
 
   run:text_mode:
+    aliases: [run:text-mode]
     desc: "Demo: 80x25 text TUI: boxes, blink, cursor, custom character set, galactic alphabet"
     cmds:
       - task: run
