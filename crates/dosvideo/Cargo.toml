@@ -1,0 +1,68 @@
+[package]
+name = "game-toolkit-dosvideo"
+description = "DOS-era video adapters (VGA, Mode X, EGA, CGA, Hercules, Tandy, VESA SVGA) with beam-accurate scanout for game-toolkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+keywords = ["dos", "vga", "retro", "gamedev", "emulation"]
+categories = ["game-development", "emulators", "graphics"]
+readme = "../../README.md"
+include = ["src/**", "fonts/**", "examples/**", "Cargo.toml"]
+
+[features]
+default = ["toolkit"]
+## game-toolkit integration: `run`, `DosGame`, `DosScreen`, keyboard/mouse mapping.
+toolkit = ["dep:game-toolkit"]
+
+[dependencies]
+game-toolkit = { workspace = true, optional = true }
+
+[dev-dependencies]
+env_logger = { workspace = true }
+
+[lints]
+workspace = true
+
+
+[[example]]
+name = "copper_bars"
+required-features = ["toolkit"]
+
+[[example]]
+name = "modex_scroll"
+required-features = ["toolkit"]
+
+[[example]]
+name = "tearing_lab"
+required-features = ["toolkit"]
+
+[[example]]
+name = "ega_scroller"
+required-features = ["toolkit"]
+
+[[example]]
+name = "cga_showcase"
+required-features = ["toolkit"]
+
+[[example]]
+name = "tandy"
+required-features = ["toolkit"]
+
+[[example]]
+name = "hercules"
+required-features = ["toolkit"]
+
+[[example]]
+name = "svga"
+required-features = ["toolkit"]
+
+[[example]]
+name = "text_mode"
+required-features = ["toolkit"]
+
+[[example]]
+name = "palette_cycling"
+required-features = ["toolkit"]

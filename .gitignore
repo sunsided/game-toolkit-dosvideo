@@ -1,0 +1,5 @@
+/target
+/.task
+Taskfile.yaml
+*.png
+!crates/**/assets/*.png

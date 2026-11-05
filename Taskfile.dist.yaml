@@ -1,0 +1,161 @@
+# game-toolkit-dosvideo — Rust workspace task runner
+# https://taskfile.dev
+version: '3'
+
+vars:
+  PROFILE: '{{ .PROFILE | default "debug" }}'
+  PROFILE_FLAG: '{{ if eq .PROFILE "release" }}--release{{ end }}'
+
+  # Demo for `task run`. Override: task run EXAMPLE=modex_scroll
+  EXAMPLE: '{{ .EXAMPLE | default "copper_bars" }}'
+
+  # Headless screenshots: frames to run before capturing, and where the PNGs go.
+  SHOT_FRAMES: '{{ .SHOT_FRAMES | default "120" }}'
+  SHOT_DIR: '{{ .SHOT_DIR | default "target/shots" }}'
+
+  CRATE: game-toolkit-dosvideo
+
+tasks:
+  default:
+    cmds:
+      - task --list --sort=none
+    silent: true
+
+  build:
+    desc: Build the workspace, all targets (PROFILE=release for optimized)
+    preconditions:
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
+    cmds:
+      - cargo build --workspace --all-targets {{.PROFILE_FLAG}} {{.CLI_ARGS}}
+
+  run:
+    desc: Run a demo (EXAMPLE=copper_bars by default; see `task examples`)
+    preconditions:
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
+    cmds:
+      - cargo run -p {{.CRATE}} --example {{.EXAMPLE}} --release {{.CLI_ARGS}}
+
+  examples:
+    desc: List the demos
+    silent: true
+    cmds:
+      - ls crates/dosvideo/examples/*.rs | xargs -n1 basename | sed 's/\.rs$//'
+
+  shots:
+    desc: Run every demo headless and write a PNG of frame SHOT_FRAMES to SHOT_DIR
+    preconditions:
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
+    cmds:
+      - mkdir -p {{.SHOT_DIR}}
+      - cargo build -p {{.CRATE}} --examples --release
+      - |
+        for f in crates/dosvideo/examples/*.rs; do
+          ex=$(basename "$f" .rs)
+          DOSVIDEO_SHOT="{{.SHOT_DIR}}/$ex.png" DOSVIDEO_SHOT_FRAMES={{.SHOT_FRAMES}} \
+            cargo run -q -p {{.CRATE}} --example "$ex" --release
+        done
+
+  test:
+    desc: Run the tests (nextest if installed), then the doctests
+    preconditions:
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
+    cmds:
+      - |
+        if command -v cargo-nextest >/dev/null 2>&1; then
+          cargo nextest run --workspace {{.CLI_ARGS}}
+        else
+          cargo test --workspace --lib --bins --tests {{.CLI_ARGS}}
+        fi
+      - task: test:docs
+
+  test:docs:
+    desc: Run the doctests
+    cmds:
+      - cargo test --workspace --doc
+
+  test:core:
+    desc: Test the emulation core alone, without the game-toolkit dependency
+    cmds:
+      - cargo test -p {{.CRATE}} --no-default-features --lib
+
+  fmt:
+    desc: Format all Rust sources
+    aliases: [format]
+    preconditions:
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
+    sources:
+      - ./**/*.rs
+    cmds:
+      - cargo fmt --all
+
+  lint:
+    desc: Lint the workspace (clippy, warnings are errors)
+    preconditions:
+      - sh: command -v cargo
+        msg: "cargo not found — install Rust from https://rustup.rs/"
+    cmds:
+      - cargo clippy --workspace --all-targets -- -D warnings {{.CLI_ARGS}}
+
+  lint:fix:
+    desc: Auto-fix clippy lints, then format
+    aliases: [fix]
+    cmds:
+      - cargo clippy --workspace --all-targets --fix --allow-dirty --allow-staged {{.CLI_ARGS}}
+      - task: fmt
+
+  check:
+    desc: Static checks - format check, clippy (with and without the toolkit feature, native + wasm)
+    cmds:
+      - cargo fmt --all --check
+      - cargo clippy --workspace --all-targets -- -D warnings
+      - cargo clippy -p {{.CRATE}} --no-default-features --lib -- -D warnings
+      - task: check:wasm
+
+  check:wasm:
+    desc: Clippy the crate for the browser target (wasm32-unknown-unknown)
+    preconditions:
+      - sh: rustup target list --installed | grep -qx wasm32-unknown-unknown
+        msg: "wasm target missing — run: rustup target add wasm32-unknown-unknown"
+    cmds:
+      - cargo clippy --target wasm32-unknown-unknown -p {{.CRATE}} --lib -- -D warnings {{.CLI_ARGS}}
+
+  ci:
+    desc: Full CI sequence - static checks, then tests and docs
+    cmds:
+      - task: check
+      - task: test
+      - task: docs
+
+  docs:
+    desc: Build the API docs (warnings are errors)
+    env:
+      RUSTDOCFLAGS: -D warnings
+    cmds:
+      - cargo doc --workspace --no-deps {{.CLI_ARGS}}
+
+  docs:open:
+    desc: Build the API docs and open them
+    cmds:
+      - cargo doc --workspace --no-deps --open
+
+  font:
+    desc: Regenerate the CP437 8x16 font from the console-setup VGA16 font (needs python3)
+    preconditions:
+      - sh: command -v python3
+        msg: "python3 not found"
+      - sh: test -f /usr/share/consolefonts/Uni2-VGA16.psf.gz
+        msg: "Uni2-VGA16.psf.gz not found — install the console-setup fonts (console-setup-linux)"
+    cmds:
+      - python3 tools/gen_font.py /usr/share/consolefonts/Uni2-VGA16.psf.gz crates/dosvideo/fonts/cp437_8x16.bin
+
+  clean:
+    desc: Remove build output
+    status:
+      - test ! -d target
+    cmds:
+      - cargo clean
