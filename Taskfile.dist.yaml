@@ -92,8 +92,14 @@ tasks:
       - task: run
         vars: {EXAMPLE: svga}
 
+  run:crt_dither:
+    desc: "Demo: Dithering (Bayer, Floyd-Steinberg) through CRT filter presets; galactic captions"
+    cmds:
+      - task: run
+        vars: {EXAMPLE: crt_dither}
+
   run:text_mode:
-    desc: "Demo: 80x25 text TUI: boxes, blink, cursor, custom character set"
+    desc: "Demo: 80x25 text TUI: boxes, blink, cursor, custom character set, galactic alphabet"
     cmds:
       - task: run
         vars: {EXAMPLE: text_mode}

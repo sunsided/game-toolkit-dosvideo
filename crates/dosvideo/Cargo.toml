@@ -66,3 +66,7 @@ required-features = ["toolkit"]
 [[example]]
 name = "palette_cycling"
 required-features = ["toolkit"]
+
+[[example]]
+name = "crt_dither"
+required-features = ["toolkit"]

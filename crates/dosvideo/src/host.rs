@@ -5,6 +5,7 @@ use std::sync::Mutex;
 
 use game_toolkit::prelude::*;
 
+use crate::crt_filter::{CrtFilter, CrtPass};
 use crate::input::sc;
 use crate::machine::{Adapter, BusTiming, Dos, MachineConfig};
 
@@ -33,8 +34,8 @@ pub struct DosConfig {
     pub show_border: bool,
     /// Scale by whole multiples vertically when the window is big enough.
     pub integer_scale: bool,
-    /// Darken every other display line, 0.0 (off) to 1.0 (black gaps).
-    pub scanlines: f32,
+    /// CRT post-filter (`None`: sharp pixels). Alt+C cycles the presets at run time.
+    pub crt: Option<CrtFilter>,
     /// Upper bound on [`DosGame::step`] calls per host frame.
     pub max_steps_per_frame: u32,
 }
@@ -48,7 +49,7 @@ impl DosConfig {
             aspect: Aspect::Crt,
             show_border: true,
             integer_scale: false,
-            scanlines: 0.0,
+            crt: None,
             max_steps_per_frame: 2000,
         }
     }
@@ -78,8 +79,18 @@ impl DosConfig {
         self
     }
 
+    /// Scanlines only: the [`CrtFilter::crisp`] preset at the given strength (0..1).
     pub fn with_scanlines(mut self, strength: f32) -> Self {
-        self.scanlines = strength.clamp(0.0, 1.0);
+        self.crt = Some(CrtFilter {
+            scanlines: strength.clamp(0.0, 1.0),
+            ..CrtFilter::crisp()
+        });
+        self
+    }
+
+    /// A CRT post-filter, e.g. [`CrtFilter::vga_monitor`] or [`CrtFilter::tv`].
+    pub fn with_crt(mut self, filter: CrtFilter) -> Self {
+        self.crt = Some(filter);
         self
     }
 }
@@ -123,24 +134,29 @@ pub fn run<G: DosGame>(config: DosConfig) -> Result<()> {
     game_toolkit::prelude::run::<Runner<G>>(app)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn headless<G: DosGame>(config: DosConfig, path: &str) -> Result<()> {
-    let frames: u64 = std::env::var("DOSVIDEO_SHOT_FRAMES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(120);
+/// `DOSVIDEO_KEYS=frame:scancode,...` (scancodes in hex with `0x` or decimal).
+fn scripted_keys() -> Vec<(u64, u8)> {
     let parse = |s: &str| {
         s.strip_prefix("0x")
             .map_or_else(|| s.parse().ok(), |h| u8::from_str_radix(h, 16).ok())
     };
-    let keys: Vec<(u64, u8)> = std::env::var("DOSVIDEO_KEYS")
+    std::env::var("DOSVIDEO_KEYS")
         .unwrap_or_default()
         .split(',')
         .filter_map(|e| {
             let (f, k) = e.split_once(':')?;
             Some((f.trim().parse().ok()?, parse(k.trim())?))
         })
-        .collect();
+        .collect()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn headless<G: DosGame>(config: DosConfig, path: &str) -> Result<()> {
+    let frames: u64 = std::env::var("DOSVIDEO_SHOT_FRAMES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(120);
+    let keys = scripted_keys();
     let mut dos = Dos::new(config.machine);
     let mut game = G::init(&mut dos)?;
     let start = dos.frames();
@@ -185,6 +201,11 @@ struct Runner<G: DosGame> {
     screen: DosScreen,
     deadline: f64,
     max_steps: u32,
+    host_frames: u64,
+    window_shot: Option<(String, u64)>,
+    /// Scripted key taps by host frame (`DOSVIDEO_KEYS`), for window screenshots.
+    keys: Vec<(u64, u8)>,
+    held: Vec<u8>,
 }
 
 impl<G: DosGame> Game for Runner<G> {
@@ -200,20 +221,51 @@ impl<G: DosGame> Game for Runner<G> {
         screen.aspect = config.aspect;
         screen.show_border = config.show_border;
         screen.integer_scale = config.integer_scale;
-        screen.scanlines = config.scanlines;
+        screen.crt = config.crt;
+        // DOSVIDEO_CRT=0..4 picks a preset (0 = off), for trying them without code changes.
+        if let Some(i) = std::env::var("DOSVIDEO_CRT")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+        {
+            screen.set_crt_preset(i);
+        }
         screen.upload(&mut ctx.gfx, &dos);
+        // DOSVIDEO_WINDOW_SHOT=out.png [DOSVIDEO_WINDOW_SHOT_FRAMES=N]: capture the window
+        // (with the GPU filter) after N host frames, then quit.
+        let window_shot = std::env::var("DOSVIDEO_WINDOW_SHOT").ok().map(|p| {
+            let n = std::env::var("DOSVIDEO_WINDOW_SHOT_FRAMES")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(120);
+            (p, n)
+        });
         Ok(Self {
             deadline: dos.now_ns(),
             dos,
             game,
             screen,
             max_steps: config.max_steps_per_frame.max(1),
+            host_frames: 0,
+            keys: scripted_keys(),
+            held: Vec::new(),
+            window_shot,
         })
     }
 
     fn update(&mut self, ctx: &mut Context, dt: f32) {
+        for k in self.held.drain(..) {
+            self.dos.keyboard_mut().release(k);
+        }
+        let f = self.host_frames;
+        for &(_, k) in self.keys.iter().filter(|(kf, _)| *kf == f) {
+            let ascii = crate::input::Keyboard::ascii_for(k, false);
+            self.dos.keyboard_mut().press(k, ascii);
+            self.held.push(k);
+        }
         let alt = ctx.input.key_held(Key::AltLeft) || ctx.input.key_held(Key::AltRight);
-        if alt && ctx.input.key_pressed(Key::Enter) {
+        if alt && ctx.input.key_pressed(Key::KeyC) {
+            self.screen.cycle_crt();
+        } else if alt && ctx.input.key_pressed(Key::Enter) {
             let fs = ctx.window.fullscreen().is_some();
             ctx.window
                 .set_fullscreen((!fs).then_some(winit::window::Fullscreen::Borderless(None)));
@@ -252,10 +304,23 @@ impl<G: DosGame> Game for Runner<G> {
         self.dos.sync();
         self.screen.upload(&mut ctx.gfx, &self.dos);
         let size = ctx.gfx.size();
-        let mut p = frame.painter(&mut ctx.gfx);
-        p.clear([0.0, 0.0, 0.0, 1.0]);
-        let rect = self.screen.draw(&mut p, &self.dos, size);
-        self.game.overlay(&self.dos, &mut p, rect);
+        {
+            let mut p = frame.painter(&mut ctx.gfx);
+            p.clear([0.0, 0.0, 0.0, 1.0]);
+            let rect = self.screen.draw(&mut p, &self.dos, size);
+            self.game.overlay(&self.dos, &mut p, rect);
+        }
+        // The CRT pass goes on top of the flushed painter output.
+        self.screen.draw_crt(&ctx.gfx, frame);
+
+        self.host_frames += 1;
+        if let Some((path, n)) = &self.window_shot {
+            if self.host_frames == *n {
+                ctx.gfx.request_screenshot(path.clone());
+            } else if self.host_frames > *n + 2 {
+                ctx.quit();
+            }
+        }
     }
 }
 
@@ -267,7 +332,12 @@ pub struct DosScreen {
     pub aspect: Aspect,
     pub show_border: bool,
     pub integer_scale: bool,
-    pub scanlines: f32,
+    /// CRT post-filter; `None` shows sharp pixels. Drawn by [`DosScreen::draw_crt`].
+    pub crt: Option<CrtFilter>,
+    crt_index: usize,
+    crt_pass: Option<CrtPass>,
+    crt_uploaded: u64,
+    layout: ([f32; 4], [f32; 4]),
     /// Where the active display area was drawn last, `[x, y, w, h]`.
     pub active_rect: [f32; 4],
 }
@@ -286,14 +356,48 @@ impl DosScreen {
             aspect: Aspect::Crt,
             show_border: true,
             integer_scale: false,
-            scanlines: 0.0,
+            crt: None,
+            crt_index: 0,
+            crt_pass: None,
+            crt_uploaded: u64::MAX,
+            layout: ([0.0; 4], [0.0; 4]),
             active_rect: [0.0; 4],
+        }
+    }
+
+    /// Select a CRT preset: 0 = off, 1.. = [`CrtFilter::presets`].
+    pub fn set_crt_preset(&mut self, i: usize) {
+        let presets = CrtFilter::presets();
+        self.crt_index = i % (presets.len() + 1);
+        self.crt = self.crt_index.checked_sub(1).map(|k| presets[k].1);
+    }
+
+    /// Next CRT preset (off → presets → off).
+    pub fn cycle_crt(&mut self) {
+        self.set_crt_preset(self.crt_index + 1);
+    }
+
+    /// Name of the current CRT preset.
+    pub fn crt_name(&self) -> &'static str {
+        match self.crt_index.checked_sub(1) {
+            None if self.crt.is_some() => "custom",
+            None => "off",
+            Some(k) => CrtFilter::presets()[k].0,
         }
     }
 
     /// Upload the last finished frame if it is new.
     pub fn upload(&mut self, gfx: &mut Graphics, dos: &Dos) {
         let f = dos.frame();
+        if self.crt.is_some() {
+            let pass = self.crt_pass.get_or_insert_with(|| CrtPass::new(gfx));
+            if self.crt_uploaded != f.number {
+                pass.upload(gfx, f.width, f.height, f.rgba);
+                self.crt_uploaded = f.number;
+            }
+            return;
+        }
+        self.crt_uploaded = u64::MAX;
         match self.tex {
             Some((id, w, h)) if w == f.width && h == f.height => {
                 if self.uploaded != f.number {
@@ -353,25 +457,18 @@ impl DosScreen {
     /// Draw the picture centered into a `window`-sized target. Returns the rectangle of the
     /// active display area.
     pub fn draw(&mut self, p: &mut Painter<'_>, dos: &Dos, window: (u32, u32)) -> [f32; 4] {
-        let Some((tex, _, _)) = self.tex else {
-            return [0.0; 4];
-        };
         let (rect, src) = self.layout(dos, window);
-        p.sprite_region(
-            tex,
-            [src[0], src[1]],
-            [src[2], src[3]],
-            [rect[0], rect[1]],
-            [rect[2], rect[3]],
-        );
-        let sy = rect[3] / src[3];
-        if self.scanlines > 0.0 && sy >= 2.0 {
-            let c = [0.0, 0.0, 0.0, self.scanlines];
-            for l in 0..src[3] as u32 {
-                let y = rect[1] + (l as f32 + 0.5) * sy;
-                p.rect_ex([rect[0], y], [rect[2], sy * 0.5], c, 1, BlendMode::Alpha);
-            }
+        self.layout = (rect, src);
+        if let (None, Some((tex, _, _))) = (&self.crt, self.tex) {
+            p.sprite_region(
+                tex,
+                [src[0], src[1]],
+                [src[2], src[3]],
+                [rect[0], rect[1]],
+                [rect[2], rect[3]],
+            );
         }
+        let sy = rect[3] / src[3];
         let f = dos.frame();
         let sx = rect[2] / src[2];
         let active = [
@@ -382,6 +479,17 @@ impl DosScreen {
         ];
         self.active_rect = active;
         active
+    }
+
+    /// Draw the picture through the CRT filter, if one is set. Call after the painter for the
+    /// frame was dropped (the filter is its own render pass on top); [`DosScreen::draw`] must
+    /// have run this frame to lay the picture out. Anything painted inside the picture's
+    /// rectangle is covered.
+    pub fn draw_crt(&self, gfx: &Graphics, frame: &mut Frame) {
+        if let (Some(filter), Some(pass)) = (&self.crt, &self.crt_pass) {
+            let (rect, src) = self.layout;
+            pass.draw(gfx, frame, filter, rect, src);
+        }
     }
 
     /// Forward host keyboard and mouse state: key presses and releases become scancodes in

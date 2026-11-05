@@ -68,6 +68,8 @@ pub mod text;
 pub mod vga;
 
 #[cfg(feature = "toolkit")]
+mod crt_filter;
+#[cfg(feature = "toolkit")]
 mod host;
 
 pub use cga::CgaMonitor;
@@ -79,17 +81,19 @@ pub use palette::Phosphor;
 pub use svga::VbeMode;
 
 #[cfg(feature = "toolkit")]
+pub use crt_filter::{CrtFilter, PhosphorMask};
+#[cfg(feature = "toolkit")]
 pub use host::{Aspect, DosConfig, DosGame, DosScreen, run};
 
 /// `use game_toolkit_dosvideo::prelude::*;`
 pub mod prelude {
-    pub use crate::draw::{Bitmap, ModeX};
+    pub use crate::draw::{Bitmap, Dither, ModeX};
     pub use crate::palette::color;
     pub use crate::{
         Adapter, Beam, BusTiming, CgaMonitor, Dos, Font, MachineConfig, Phosphor, Timing, cpu, sc,
     };
     #[cfg(feature = "toolkit")]
-    pub use crate::{Aspect, DosConfig, DosGame, DosScreen, run};
+    pub use crate::{Aspect, CrtFilter, DosConfig, DosGame, DosScreen, PhosphorMask, run};
     #[cfg(feature = "toolkit")]
     pub use game_toolkit::prelude::{Painter, anyhow};
 }

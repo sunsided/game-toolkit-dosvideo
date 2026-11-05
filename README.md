@@ -4,6 +4,11 @@ DOS-era PC video for [game-toolkit](https://github.com/sunsided/game-toolkit): V
 Mode X, 16-color planar, text), EGA, CGA (with composite artifact colors and snow), Hercules,
 Tandy 1000 and VESA SVGA, emulated at the register level with a beam-accurate CRT.
 
+![The text_mode demo in VGA text mode with the Standard Galactic Alphabet loaded, through the VGA monitor CRT filter](docs/text_mode_galactic.png)
+
+*`text_mode` with the galactic alphabet loaded into the character generator (`G`) and the VGA
+monitor CRT filter (`Alt+C`).*
+
 It is not a PC emulator: your game is ordinary Rust. What is emulated is the part DOS
 programmers fought with, the display adapter: its memory layout, its registers, its timing,
 and the electron beam that reads it out while you are writing to it. Program it through I/O
@@ -113,21 +118,55 @@ From most to least authentic, freely mixed:
 Keyboard input comes both ways: `dos.key(sc::LEFT)` is the held-key table a custom `INT 9`
 handler would fill, and `getch()` / `kbhit()` is the BIOS buffer.
 
+## Looking like a CRT
+
+Pixel-sharp output is the default. `DosConfig::with_crt(CrtFilter::tv())` (or `Alt+C` at run
+time, cycling off → crisp scanlines → VGA monitor → TV → mono monitor) adds a GPU post-filter.
+The emulated frame has one row per *real* scanline (400 in mode 13h, 200 on a CGA, 350 on a
+Hercules card), so the filter can model the beam instead of faking it:
+
+- **scanlines**: each line is a horizontal stripe of light whose height grows with
+  brightness, so gaps show between dark lines and close between bright ones. 15 kHz modes get
+  visible gaps, 31 kHz VGA gets fine ones.
+- **beam blur**: the horizontal spread of the electron spot. This is what melted dither
+  patterns into the in-between colors the artists of the era counted on.
+- **phosphor mask** (aperture grille, slot mask or shadow mask): light is split into R, G and B
+  stripes or dots on the window's own pixels, the "subpixel" structure the eye fuses back
+  together. It needs about 3 window pixels per triad and fades out below that.
+- **bloom**, **curvature**, **vignette**, rounded corners.
+
+Every knob is a field of `CrtFilter`. With `DosScreen` in your own game, set `screen.crt` and
+call `screen.draw_crt(&ctx.gfx, frame)` after the painter for the frame is dropped.
+
+## Dithering and fonts
+
+`Bitmap::from_rgba(w, h, rgba, palette, Dither::Bayer4)` turns true-color art into palette
+indices the period way: nearest color, ordered Bayer 2x2 / 4x4 / 8x8, or Floyd-Steinberg error
+diffusion.
+
+Fonts: `Font::vga()` (8x16), `Font::ega()` (8x14), `Font::cga()` (8x8), and the Standard
+Galactic Alphabet of the Commander Keen games as `Font::sga()`, `Font::sga_ega()` and
+`Font::sga_cga()`: letters become galactic, everything else stays CP437. Load any of them into
+text mode with `dos.load_font(font, 0)`, or draw with `Bitmap::text`.
+
 ## Running
 
 `run::<G>(DosConfig)` opens a game-toolkit window. `DosGame::step` is one iteration of your
 main loop; the host calls it as often as emulated time allows, so a loop that waits for the
 retrace once runs at the mode's refresh rate (70 Hz in mode 13h, 60 Hz in Mode X, ~50 Hz on a
-Hercules card). Alt+Enter toggles fullscreen. `DosConfig` picks the aspect (`Aspect::Crt` by
+Hercules card). Alt+Enter toggles fullscreen, Alt+C cycles the CRT filter. `DosConfig` picks the aspect (`Aspect::Crt` by
 default, so the active area is 4:3 and mode 13h pixels are taller than wide), the overscan
-border, integer scaling and a scanline effect.
+border, integer scaling and the CRT filter.
 
 To put a DOS screen into your own `Game`, use `DosScreen` directly: `feed_input`, then step
 your `Dos`, `upload` and `draw`.
 
 Headless, for tests and screenshots: `DOSVIDEO_SHOT=out.png DOSVIDEO_SHOT_FRAMES=120
 cargo run --example copper_bars` writes the frame as PNG instead of opening a window, and
-`DOSVIDEO_KEYS=30:0x30,90:0x24` taps keys (by scancode) at given frames. `dos.frame()`
+`DOSVIDEO_KEYS=30:0x30,90:0x24` taps keys (by scancode) at given frames (also in window mode, counted in host frames). Those shots are the
+raw emulated frame; to capture the window with the CRT filter, use
+`DOSVIDEO_WINDOW_SHOT=out.png DOSVIDEO_WINDOW_SHOT_FRAMES=90`, and `DOSVIDEO_CRT=0..4` to pick
+a preset. `dos.frame()`
 gives the last complete frame as RGBA anywhere, with `to_png()`.
 
 Without the default `toolkit` feature the crate has no dependencies at all: just the machine,
@@ -152,7 +191,8 @@ task shots               # screenshot every demo headless into target/shots/
 | `tandy` | Mode 9 320x200x16 with dirty-row updates in the 4-bank interleave, gate-array palette effects, and modes 8 and 0Ah. |
 | `hercules` | 720x348 wireframes with two-page flipping on the inverted retrace bit, phosphor colors, and MDA text attributes with the 9th-column rule. |
 | `svga` | VBE 640x480x8 fill benchmark (banked by pixel, column or row vs. LFB, with bank-switch counts), 640x480 hi-color, and 800x600 panning over a 1600x1200 virtual screen. |
-| `text_mode` | An 80x25 TUI: boxes and shadows, blink vs. bright backgrounds, cursor, a custom tile character set loaded into plane 2 (with animated water), and 80x50. |
+| `crt_dither` | A true-color scene reduced to EGA, CGA or 256 colors with each dither method, shown through the CRT presets (`Alt+C`) that blend the patterns. `G` switches the captions to the Standard Galactic Alphabet. |
+| `text_mode` | An 80x25 TUI: boxes and shadows, blink vs. bright backgrounds, cursor, a custom tile character set loaded into plane 2 (with animated water), the galactic alphabet (`G`), and 80x50. |
 
 ## Accuracy
 

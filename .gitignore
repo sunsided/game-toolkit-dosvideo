@@ -3,3 +3,4 @@
 Taskfile.yaml
 *.png
 !crates/**/assets/*.png
+!docs/*.png
