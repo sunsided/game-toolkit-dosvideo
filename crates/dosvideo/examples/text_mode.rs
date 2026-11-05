@@ -13,8 +13,13 @@
 //! Attribute bit 7 either blinks the character or, with blinking off, selects one of 16
 //! background colors instead of 8.
 //!
+//! The same trick can swap the whole alphabet: `G` loads the Standard Galactic Alphabet, the
+//! alien script from the Commander Keen games, and every letter on screen turns galactic at
+//! once (digits, punctuation and box drawing stay).
+//!
 //! Keys: arrows move the cursor (and the hero), `B` blink vs. bright backgrounds, `F` custom
-//! font on/off, `H` 80x25 / 80x50 (max scan line 7 and the 8x8 font), `Esc` quit.
+//! font on/off, `G` galactic alphabet, `H` 80x25 / 80x50 (max scan line 7 and the 8x8 font),
+//! `Esc` quit.
 
 use game_toolkit_dosvideo::prelude::*;
 use game_toolkit_dosvideo::text::{BOX_DOUBLE, BOX_SINGLE, attr};
@@ -88,8 +93,13 @@ fn tiles(water_phase: u32) -> Vec<(u8, [u8; 16])> {
 }
 
 /// Build the font: VGA 8x16 or CGA 8x8 with the tiles patched in.
-fn make_font(tall: bool, custom: bool, phase: u32) -> Font {
-    let base = if tall { Font::vga() } else { Font::cga() };
+fn make_font(tall: bool, custom: bool, galactic: bool, phase: u32) -> Font {
+    let base = match (tall, galactic) {
+        (true, false) => Font::vga(),
+        (false, false) => Font::cga(),
+        (true, true) => Font::sga(),
+        (false, true) => Font::sga_cga(),
+    };
     let h = base.height() as usize;
     let mut raw = base.raw().to_vec();
     if custom {
@@ -106,6 +116,7 @@ fn make_font(tall: bool, custom: bool, phase: u32) -> Font {
 struct TextUi {
     blink: bool,
     custom: bool,
+    galactic: bool,
     tall: bool,
     cursor: (u32, u32),
     log: Vec<String>,
@@ -199,7 +210,7 @@ impl TextUi {
             1,
             rows - 1,
             &format!(
-                "\u{2191}\u{2193}\u{2190}\u{2192} move  B blink:{}  F font:{}  H {}  Esc quit",
+                "\u{2191}\u{2193}\u{2190}\u{2192} move  B blink:{}  F font:{}  G galactic  H {}  Esc quit",
                 if self.blink { "on " } else { "off" },
                 if self.custom { "on " } else { "off" },
                 mode
@@ -247,7 +258,10 @@ impl TextUi {
     }
 
     fn apply_font(&self, dos: &mut Dos) {
-        dos.load_font(&make_font(self.tall, self.custom, self.phase), 0);
+        dos.load_font(
+            &make_font(self.tall, self.custom, self.galactic, self.phase),
+            0,
+        );
     }
 
     fn set_height(&mut self, dos: &mut Dos, tall: bool) {
@@ -274,6 +288,7 @@ impl DosGame for TextUi {
         let mut ui = Self {
             blink: true,
             custom: true,
+            galactic: false,
             tall: true,
             cursor: (10, 8),
             log: Vec::new(),
@@ -324,6 +339,15 @@ impl DosGame for TextUi {
                         } else {
                             "removed: the plain CP437 glyphs are back"
                         }
+                    ));
+                    self.draw_log(dos);
+                }
+                sc::G => {
+                    self.galactic = !self.galactic;
+                    self.apply_font(dos);
+                    self.log(format!(
+                        "Standard Galactic Alphabet {}",
+                        if self.galactic { "loaded" } else { "unloaded" }
                     ));
                     self.draw_log(dos);
                 }

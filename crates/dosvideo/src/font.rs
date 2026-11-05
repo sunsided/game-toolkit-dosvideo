@@ -35,32 +35,38 @@ impl Font {
     /// The EGA / MDA 8x14 font.
     pub fn ega() -> &'static Font {
         static F: OnceLock<Font> = OnceLock::new();
-        F.get_or_init(|| {
-            let mut data = Vec::with_capacity(256 * 14);
-            for g in VGA16.as_chunks::<16>().0 {
-                // VGA glyphs carry one or two blank rows above and below; drop row 0 and 15
-                // unless the glyph reaches them (box drawing, blocks), then drop the bottom two.
-                let (a, b) = if g[0] == 0 && g[15] == 0 {
-                    (1, 15)
-                } else {
-                    (0, 14)
-                };
-                data.extend_from_slice(&g[a..b]);
-            }
-            Font { height: 14, data }
-        })
+        F.get_or_init(|| derive14(VGA16))
     }
 
     /// The CGA 8x8 font.
     pub fn cga() -> &'static Font {
         static F: OnceLock<Font> = OnceLock::new();
-        F.get_or_init(|| {
-            let mut data = Vec::with_capacity(256 * 8);
-            for (code, g) in VGA16.as_chunks::<16>().0.iter().enumerate() {
-                data.extend_from_slice(&squash_glyph(code as u8, g));
-            }
-            Font { height: 8, data }
+        F.get_or_init(|| derive8(VGA16))
+    }
+
+    /// The VGA font with the letters replaced by the Standard Galactic Alphabet, the alien
+    /// script of the Commander Keen games: `A`-`Z` and `a`-`z` both map to the 26 SGA glyphs,
+    /// everything else (digits, punctuation, box drawing) stays as it is. Load it with
+    /// [`Dos::load_font`](crate::Dos::load_font) for galactic text mode, or draw with it via
+    /// [`Bitmap::text`](crate::draw::Bitmap::text).
+    pub fn sga() -> &'static Font {
+        static F: OnceLock<Font> = OnceLock::new();
+        F.get_or_init(|| Font {
+            height: 16,
+            data: sga16().to_vec(),
         })
+    }
+
+    /// The SGA font at 8x14, for EGA and Hercules text.
+    pub fn sga_ega() -> &'static Font {
+        static F: OnceLock<Font> = OnceLock::new();
+        F.get_or_init(|| derive14(&sga16()))
+    }
+
+    /// The SGA font at 8x8, for CGA text and VGA 50-line text.
+    pub fn sga_cga() -> &'static Font {
+        static F: OnceLock<Font> = OnceLock::new();
+        F.get_or_init(|| derive8(&sga16()))
     }
 
     pub fn height(&self) -> u8 {
@@ -82,6 +88,161 @@ impl Font {
     pub fn text_width(&self, s: &str) -> u32 {
         s.chars().count() as u32 * 8
     }
+}
+
+/// An 8x14 font from an 8x16 one.
+fn derive14(src: &[u8; 4096]) -> Font {
+    let mut data = Vec::with_capacity(256 * 14);
+    for g in src.as_chunks::<16>().0 {
+        // VGA glyphs carry one or two blank rows above and below; drop row 0 and 15 unless the
+        // glyph reaches them (box drawing, blocks), then drop the bottom two.
+        let (a, b) = if g[0] == 0 && g[15] == 0 {
+            (1, 15)
+        } else {
+            (0, 14)
+        };
+        data.extend_from_slice(&g[a..b]);
+    }
+    Font { height: 14, data }
+}
+
+/// An 8x8 font from an 8x16 one.
+fn derive8(src: &[u8; 4096]) -> Font {
+    let mut data = Vec::with_capacity(256 * 8);
+    for (code, g) in src.as_chunks::<16>().0.iter().enumerate() {
+        data.extend_from_slice(&squash_glyph(code as u8, g));
+    }
+    Font { height: 8, data }
+}
+
+/// The 26 Standard Galactic Alphabet letters, rows 2..=11 of an 8x16 cell (in the VGA font's
+/// style: 2-pixel verticals, 1-pixel horizontals). Drawn for this crate after the letter
+/// forms commonly given as ᔑ ʖ ᓵ ↸ ᒷ ⎓ ⊣ ⍑ ╎ ⋮ ꖌ ꖎ ᒲ リ 𝙹 !¡ ᑑ ∷ ᓭ ℸ̣ ⚍ ⍊ ∴ ·/ || ⨅.
+const SGA: [[&str; 10]; 26] = [
+    [
+        "....###.", "...##.##", "...##...", "...##...", "...##...", "...##...", "...##...",
+        "...##...", "##.##...", ".###....",
+    ],
+    [
+        "..##....", "..##....", "..##....", "..##....", "..###...", "...###..", "....##..",
+        "....##..", "..####..", "..##....",
+    ],
+    [
+        ".##.....", ".##.....", ".##.....", ".###....", "..####..", "....###.", ".....##.",
+        ".....##.", ".....##.", ".....##.",
+    ],
+    [
+        "########", "........", "#####...", "##......", "#.#.....", "#..#....", "....#...",
+        ".....#..", "......#.", ".......#",
+    ],
+    [
+        "##......", "##......", "##......", "##......", "##...##.", "##...##.", "##......",
+        "##......", "##......", "#######.",
+    ],
+    [
+        "........", "........", "........", "########", "........", "........", "##.##.##",
+        "........", "........", "........",
+    ],
+    [
+        "......##", "......##", "......##", "......##", "########", "......##", "......##",
+        "......##", "......##", "......##",
+    ],
+    [
+        "........", "########", "........", "########", "...##...", "...##...", "...##...",
+        "...##...", "...##...", "...##...",
+    ],
+    [
+        "...##...", "...##...", "...##...", "...##...", "........", "........", "...##...",
+        "...##...", "...##...", "...##...",
+    ],
+    [
+        "........", "...##...", "...##...", "........", "...##...", "...##...", "........",
+        "...##...", "...##...", "........",
+    ],
+    [
+        "...##...", "...##...", "...##...", "...##...", "##.##.##", "##.##.##", "...##...",
+        "...##...", "...##...", "...##...",
+    ],
+    [
+        "..##....", "..##....", "..##.##.", "..##.##.", "..##....", "..##....", "..##.##.",
+        "..##.##.", "..##....", "..##....",
+    ],
+    [
+        "......##", "......##", "......##", "......##", ".##...##", ".##...##", "......##",
+        "......##", "......##", ".#######",
+    ],
+    [
+        ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".....##.", ".....##.",
+        "....##..", "...##...", "..##....",
+    ],
+    [
+        "########", "....##..", "....##..", "....##..", "....##..", "....##..", "....##..",
+        "##..##..", "##..##..", ".####...",
+    ],
+    [
+        ".##..##.", ".##..##.", ".##.....", ".##..##.", ".##..##.", ".##..##.", ".##..##.",
+        ".....##.", ".##..##.", ".##..##.",
+    ],
+    [
+        "#####...", "######..", "....##..", ".....##.", ".....##.", ".....##.", ".....##.",
+        "....##..", "######..", "#####...",
+    ],
+    [
+        "........", ".##..##.", ".##..##.", "........", "........", ".##..##.", ".##..##.",
+        "........", "........", "........",
+    ],
+    [
+        ".##.....", ".##.....", ".###....", "..#####.", "....###.", ".....##.", ".....##.",
+        ".....##.", ".....##.", ".....##.",
+    ],
+    [
+        "########", "......##", "......##", "......##", "......##", "......##", "......##",
+        "......##", "##....##", "##......",
+    ],
+    [
+        "........", "........", "###..###", "###..###", "........", "........", "########",
+        "########", "........", "........",
+    ],
+    [
+        "...##...", "...##...", "...##...", "...##...", "...##...", "...##...", "########",
+        "........", "########", "........",
+    ],
+    [
+        "........", "...##...", "...##...", "........", "........", "##....##", "##....##",
+        "........", "........", "........",
+    ],
+    [
+        ".......#", "......##", "......#.", ".....##.", "##...#..", "##..##..", "....#...",
+        "...##...", "...#....", "..##....",
+    ],
+    [
+        ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".##..##.", ".##..##.",
+        ".##..##.", ".##..##.", ".##..##.",
+    ],
+    [
+        "########", "##....##", "##....##", "##....##", "##....##", "##....##", "##....##",
+        "##....##", "##....##", "##....##",
+    ],
+];
+
+/// The VGA font with SGA letters.
+fn sga16() -> [u8; 4096] {
+    let mut data = *VGA16;
+    for (i, rows) in SGA.iter().enumerate() {
+        let mut g = [0u8; 16];
+        for (r, row) in rows.iter().enumerate() {
+            g[r + 2] =
+                row.bytes().enumerate().fold(
+                    0,
+                    |acc, (x, c)| if c == b'#' { acc | (0x80 >> x) } else { acc },
+                );
+        }
+        for base in *b"Aa" {
+            let at = (base as usize + i) * 16;
+            data[at..at + 16].copy_from_slice(&g);
+        }
+    }
+    data
 }
 
 /// Fit a 16-row glyph into 8 rows.
@@ -161,6 +322,17 @@ mod tests {
         assert!(Font::vga().glyph(b'A').iter().any(|&r| r != 0));
         assert!(Font::cga().glyph(0xDB).iter().all(|&r| r == 0xFF));
         assert_eq!(Font::cga().glyph(0xDE)[0], 0x0F);
+    }
+
+    #[test]
+    fn sga_replaces_letters_only() {
+        let s = Font::sga();
+        assert_ne!(s.glyph(b'A'), Font::vga().glyph(b'A'));
+        assert_eq!(s.glyph(b'A'), s.glyph(b'a'));
+        assert_eq!(s.glyph(b'7'), Font::vga().glyph(b'7'));
+        assert_eq!(s.glyph(0xC9), Font::vga().glyph(0xC9));
+        assert_eq!(Font::sga_cga().height(), 8);
+        assert_eq!(Font::sga_ega().height(), 14);
     }
 
     #[test]
