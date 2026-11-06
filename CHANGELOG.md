@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The README's screenshots use absolute URLs, so they render on crates.io (relative paths
+  resolved against the package directory, where the images are not packaged).
+
 ## [0.2.0] - 2026-11-06
 
 ### Changed
