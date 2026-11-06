@@ -219,8 +219,21 @@ pub(crate) struct CrtPass {
     sampler: wgpu::Sampler,
     uniforms: wgpu::Buffer,
     texture: Option<(wgpu::Texture, wgpu::BindGroup, u32, u32)>,
-    /// The indexed-target warning was printed.
-    warned_indexed: std::cell::Cell<bool>,
+    /// One-shot warnings, so a per-frame failure is reported once instead of every frame.
+    warned: Warnings,
+}
+
+/// Which one-shot warnings [`CrtPass`] has already printed.
+#[derive(Default)]
+struct Warnings {
+    indexed: std::sync::atomic::AtomicBool,
+    no_encoder: std::sync::atomic::AtomicBool,
+}
+
+impl Warnings {
+    fn first(&self, flag: &std::sync::atomic::AtomicBool) -> bool {
+        !flag.swap(true, std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 impl CrtPass {
@@ -312,7 +325,7 @@ impl CrtPass {
             sampler,
             uniforms,
             texture: None,
-            warned_indexed: std::cell::Cell::new(false),
+            warned: Warnings::default(),
         }
     }
 
@@ -395,7 +408,7 @@ impl CrtPass {
         // With indexed colour the target holds palette indices, not colours: drawing the
         // filtered picture there would turn it into garbage indices.
         if frame.target_is_indexed() {
-            if !self.warned_indexed.replace(true) {
+            if self.warned.first(&self.warned.indexed) {
                 eprintln!("dosvideo: CRT filter skipped, the toolkit's indexed colour is on");
             }
             return;
@@ -419,6 +432,9 @@ impl CrtPass {
         // resolution or post effects), which is scaled onto the window after this pass.
         let view = frame.target_view().clone();
         let Some(encoder) = frame.encoder_mut() else {
+            if self.warned.first(&self.warned.no_encoder) {
+                eprintln!("dosvideo: CRT filter skipped, the frame has no command encoder");
+            }
             return;
         };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -442,5 +458,19 @@ impl CrtPass {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, bg, &[]);
         pass.draw(0..3, 0..1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The pass holds only `Send + Sync` GPU resources, so a [`DosScreen`] that owns one stays
+    /// shareable across threads.
+    #[test]
+    fn crt_pass_is_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<CrtPass>();
+        assert_send_sync::<crate::DosScreen>();
     }
 }
