@@ -25,7 +25,9 @@ semicolon_if_nothing_returned = "warn"
 uninlined_format_args = "warn"
 
 [workspace.dependencies]
-game-toolkit = "0.10"
+# Unreleased game-toolkit main (device limits, virtual resolution, post-processing);
+# switch back to the crates.io release before publishing.
+game-toolkit = { git = "https://github.com/sunsided/game-toolkit", rev = "ee974e1e289ffbe179b4d1f29048cca600fbaaa3" }
 env_logger = "0.11"
 # Same track as game-toolkit's `synth` feature; no audio I/O, just the sequencer.
 synthie = { version = "0.8", default-features = false, features = ["std", "arp"] }

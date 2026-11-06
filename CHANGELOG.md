@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Build against game-toolkit main (device limits, virtual resolution, post-processing,
+  bitmap fonts, indexed colour); no API changes in dosvideo.
+
+### Fixed
+
+- The CRT filter draws into the toolkit's drawing target instead of the window surface, so
+  it stays visible in games that set a virtual resolution or add post effects, and those
+  effects apply on top of it.
+
 ## [0.1.0] - 2026-11-06
 
 First release.

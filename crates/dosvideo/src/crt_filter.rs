@@ -376,7 +376,8 @@ impl CrtPass {
         );
     }
 
-    /// Draw the uploaded frame into `rect` (window pixels), showing `region` (dots) of it.
+    /// Draw the uploaded frame into `rect` (drawing pixels, as [`Graphics::size`]), showing
+    /// `region` (dots) of it.
     pub fn draw(
         &self,
         gfx: &Graphics,
@@ -389,8 +390,8 @@ impl CrtPass {
             return;
         };
         let (ww, wh) = gfx.size();
-        // Clip the rectangle to the window for the viewport; the shader works in absolute
-        // window coordinates, so clipping does not move the picture.
+        // Clip the rectangle to the target for the viewport; the shader works in absolute
+        // target coordinates, so clipping does not move the picture.
         let x0 = rect[0].max(0.0);
         let y0 = rect[1].max(0.0);
         let x1 = (rect[0] + rect[2]).min(ww as f32);
@@ -403,11 +404,16 @@ impl CrtPass {
             0,
             &filter.uniforms(rect, [*tw as f32, *th as f32], region),
         );
-        let (view, encoder) = frame.view_and_encoder();
+        // Draw where the painter drew: the toolkit's canvas when it has one (a virtual
+        // resolution or post effects), which is scaled onto the window after this pass.
+        let view = frame.target_view().clone();
+        let Some(encoder) = frame.encoder_mut() else {
+            return;
+        };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("dosvideo.crt.pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
+                view: &view,
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
