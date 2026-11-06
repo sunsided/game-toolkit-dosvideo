@@ -219,6 +219,8 @@ pub(crate) struct CrtPass {
     sampler: wgpu::Sampler,
     uniforms: wgpu::Buffer,
     texture: Option<(wgpu::Texture, wgpu::BindGroup, u32, u32)>,
+    /// The indexed-target warning was printed.
+    warned_indexed: std::cell::Cell<bool>,
 }
 
 impl CrtPass {
@@ -310,6 +312,7 @@ impl CrtPass {
             sampler,
             uniforms,
             texture: None,
+            warned_indexed: std::cell::Cell::new(false),
         }
     }
 
@@ -389,6 +392,14 @@ impl CrtPass {
         let Some((_, bg, tw, th)) = &self.texture else {
             return;
         };
+        // With indexed colour the target holds palette indices, not colours: drawing the
+        // filtered picture there would turn it into garbage indices.
+        if frame.target_is_indexed() {
+            if !self.warned_indexed.replace(true) {
+                eprintln!("dosvideo: CRT filter skipped, the toolkit's indexed colour is on");
+            }
+            return;
+        }
         let (ww, wh) = gfx.size();
         // Clip the rectangle to the target for the viewport; the shader works in absolute
         // target coordinates, so clipping does not move the picture.

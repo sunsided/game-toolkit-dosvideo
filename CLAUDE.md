@@ -1,6 +1,6 @@
 # CLAUDE.md - working on game-toolkit-dosvideo
 
-An extension crate for [game-toolkit](../game-toolkit) (crates.io `game-toolkit = "0.10"`):
+An extension crate for [game-toolkit](../game-toolkit) (crates.io `game-toolkit = "0.11"`):
 DOS display adapters emulated at register level with a lazily painted, beam-accurate CRT.
 User-facing docs: `README.md`; API docs in `crates/dosvideo/src/lib.rs`.
 
