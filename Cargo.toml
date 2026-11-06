@@ -25,7 +25,7 @@ semicolon_if_nothing_returned = "warn"
 uninlined_format_args = "warn"
 
 [workspace.dependencies]
-game-toolkit = "0.10"
+game-toolkit = "0.11"
 env_logger = "0.11"
 # Same track as game-toolkit's `synth` feature; no audio I/O, just the sequencer.
 synthie = { version = "0.8", default-features = false, features = ["std", "arp"] }

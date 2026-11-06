@@ -839,9 +839,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38c003088a1d770ec5d8aaae17a76105e2f1f59c14760503c5e05bb5d77010b3"
+checksum = "95806192de52c20565309e32badea0d72d9fbafa68d79db5be29c9521dbec436"
 dependencies = [
  "anyhow",
  "game-toolkit-assets",
@@ -854,9 +854,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-assets"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b6dbef9fe075e435313b6b6d69e7de17c12a7509dfcb07c5766eb9aa686715f"
+checksum = "ff2b87713733c056e59058713b4af0b57a1b87219e5f5e1892925f46db265e18"
 dependencies = [
  "anyhow",
  "js-sys",
@@ -869,9 +869,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-audio"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94ef57d9629b8cf1ea94f007d6ef95720e25cf2300f560621a397c09c5e4fc59"
+checksum = "71ec24b580c36fed119583d6170f6d21519855325c7fde25cbadc530ab1388ee"
 dependencies = [
  "anyhow",
  "kira",
@@ -880,9 +880,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-core"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2ef9d9fde46caa692b117855e6ca9956b6769f8e8f831e726a0ae4315370d7b"
+checksum = "f86e4c3f2dc186316008e4390fd700d1755274e392feffa6bf2a44c62be97423"
 dependencies = [
  "anyhow",
  "game-toolkit-assets",
@@ -911,9 +911,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-gfx"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b237f02bfa4e51b272ff9df74fc43d6ec8797acb063beb06d983a0fbfd20a2a"
+checksum = "959dc2e93c485bae03cf0a4fee65fd644632d7d7a531884f38ad19152d9bd034"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -921,15 +921,16 @@ dependencies = [
  "image",
  "log",
  "miniscreenshot-wgpu",
+ "web-time",
  "wgpu",
  "winit",
 ]
 
 [[package]]
 name = "game-toolkit-input"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c798ee90973014d8e4d0c4c01f5d16450cb3ed6ee1e17c787accfa7e4ef8f5ed"
+checksum = "f70b1c727a44d6948d5b015201e55af317bfcefbf743506c5fec33489d019194"
 dependencies = [
  "gilrs",
  "log",
