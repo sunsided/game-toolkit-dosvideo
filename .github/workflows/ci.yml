@@ -65,20 +65,9 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
-      # Build the crate from its packaged form, as crates.io will. A git dependency
-      # (tracking an unreleased game-toolkit) cannot be packaged: cargo drops the
-      # `git` source and resolves from crates.io, so skip until it is a release again.
+      # Build the crate from its packaged form, as crates.io will.
       - name: Package
-        run: |
-          git_deps=$(cargo metadata --format-version 1 --no-deps --locked \
-            | jq -r '[.packages[] | select(.name == "game-toolkit-dosvideo")
-                      | .dependencies[] | select((.source // "") | startswith("git+")) | .name]
-                     | unique | join(", ")')
-          if [ -n "$git_deps" ]; then
-            echo "::warning title=Package skipped::git dependencies, not publishable: $git_deps"
-            exit 0
-          fi
-          cargo package -p game-toolkit-dosvideo --locked
+        run: cargo package -p game-toolkit-dosvideo --locked
 
   wasm:
     name: wasm (browser)
