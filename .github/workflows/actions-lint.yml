@@ -28,7 +28,20 @@ jobs:
 
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
-          tool: actionlint,shellcheck,zizmor
+          tool: shellcheck,zizmor
+
+      # install-action has no actionlint; take the release binary, checked against a pinned
+      # SHA-256 (bump both together).
+      - name: Install actionlint
+        env:
+          VERSION: 1.7.12
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="actionlint_${VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/${archive}"
+          echo "${SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "${archive}" actionlint
+          sudo install -m 0755 actionlint /usr/local/bin/actionlint
 
       - name: actionlint
         run: actionlint -color
