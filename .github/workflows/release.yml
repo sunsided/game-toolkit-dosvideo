@@ -7,7 +7,7 @@ name: Release
 # 2. creates the GitHub release, with the tag's CHANGELOG.md section as notes.
 #
 # Trusted publishing must be set up once on crates.io (crate settings -> Trusted Publishing):
-# repository sunsided/game-toolkit-dosvideo, workflow release.yml, environment crates-io.
+# repository sunsided/game-toolkit-dosvideo, workflow release.yml, environment crates.io.
 on:
   push:
     tags: ["v*"]
@@ -18,7 +18,7 @@ jobs:
   publish:
     name: Publish to crates.io
     runs-on: ubuntu-latest
-    environment: crates-io
+    environment: crates.io
     permissions:
       contents: read
       # OIDC token for crates.io trusted publishing.
