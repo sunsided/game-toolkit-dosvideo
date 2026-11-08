@@ -210,8 +210,11 @@ impl Vga {
             dot_clock_hz,
             h_total: h_total_c * cd,
             h_active: h_active_c * cd,
-            h_blank_start: hbs_c * cd,
-            h_blank_end: hbe_c * cd,
+            // Blanking takes effect one character clock after the counter compare (it runs
+            // through the same pipeline as the pixels), which centers the standard modes'
+            // border: mode 10h gets 8 dots left and right instead of 16 and 0.
+            h_blank_start: (hbs_c + 1) * cd,
+            h_blank_end: (hbe_c + 1) * cd,
             h_retrace_start: hrs_c * cd,
             h_retrace_end: hre_c * cd,
             v_total,

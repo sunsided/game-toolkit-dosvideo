@@ -227,3 +227,17 @@ fn dithering_mixes_two_colors_for_a_middle_gray() {
     let flat = Bitmap::from_rgba(16, 16, &rgba, &pal, Dither::None);
     assert!(flat.data.iter().all(|&p| p == flat.data[0]));
 }
+
+#[test]
+fn standard_vga_modes_have_a_centered_border() {
+    // Blanking lags the CRTC compare by one character clock, so the overscan border is
+    // equal on both sides (8 or 9 dots), not all on the left.
+    let mut d = instant(Adapter::Vga);
+    for (mode, side) in [(0x03, 9), (0x10, 8), (0x12, 8), (0x13, 8)] {
+        d.set_mode(mode);
+        full_frame(&mut d);
+        let f = d.frame();
+        let right = f.width - f.active[0] - f.active[2];
+        assert_eq!((f.active[0], right), (side, side), "mode {mode:02X}h");
+    }
+}
