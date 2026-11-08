@@ -8,7 +8,7 @@ use crate::palette::Phosphor;
 use crate::speaker::PcSpeaker;
 use crate::svga::{Svga, VbeMode};
 use crate::vga::{Vga, VgaKind};
-use game_toolkit_dosaudio::Tick;
+use game_toolkit_dosbus::{Channel, Tick};
 
 /// Which display adapter is installed.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -245,17 +245,6 @@ impl Video {
     }
 }
 
-/// The 8253 programmable interval timer, channel 0.
-#[derive(Clone, Copy, Debug)]
-struct Pit {
-    divisor: u32,
-    epoch_ns: f64,
-    taken: u64,
-    write_lo: Option<u8>,
-    latch: Option<u16>,
-    read_hi: bool,
-}
-
 /// 1.193182 MHz: the PC crystal (315/22 MHz) divided by 12.
 pub const PIT_HZ: f64 = Tick::HZ_NUMERATOR as f64 / (Tick::HZ_DENOMINATOR * 12) as f64;
 
@@ -273,7 +262,10 @@ pub struct Dos {
     cpu_hz: f64,
     keyboard: Keyboard,
     mouse: Mouse,
-    pit: Pit,
+    /// Timer interrupts counted up to `timer_taken` and not yet taken.
+    timer_pending: u64,
+    /// Machine time up to which timer interrupts are counted.
+    timer_taken: Tick,
     exit: bool,
     adapter: Adapter,
     /// BIOS teletype cursor (column, row).
@@ -308,14 +300,8 @@ impl Dos {
             cpu_hz: config.cpu_hz,
             keyboard: Keyboard::default(),
             mouse: Mouse::default(),
-            pit: Pit {
-                divisor: 65536,
-                epoch_ns: 0.0,
-                taken: 0,
-                write_lo: None,
-                latch: None,
-                read_hi: false,
-            },
+            timer_pending: 0,
+            timer_taken: Tick::ZERO,
             exit: false,
             adapter: config.adapter,
             tty: (0, 0),
@@ -506,11 +492,14 @@ impl Dos {
         self.now += self.bus.io_ns.max(MIN_IO_NS);
         self.sync();
         match port {
-            0x40 => self.pit_write(v),
-            // Port 0x43 is shared: channel 2 commands go to the speaker.
-            0x42 | 0x61 => self.speaker.outb(self.now_tick(), port, v),
-            0x43 if v >> 6 == 2 => self.speaker.outb(self.now_tick(), port, v),
-            0x43 => self.pit_command(v),
+            // The PIT and port 0x61 live with the speaker.
+            0x40 | 0x43 => {
+                // Reprogramming channel 0 restarts its edge count: collect the interrupts
+                // that already fired first.
+                self.count_timer_ticks();
+                self.speaker.outb(self.now_tick(), port, v);
+            }
+            0x41 | 0x42 | 0x61 => self.speaker.outb(self.now_tick(), port, v),
             _ => with_card!(&mut self.video, c => c.port_out(port, v)),
         }
         self.check_timing();
@@ -528,9 +517,8 @@ impl Dos {
         self.now += self.bus.io_ns.max(MIN_IO_NS);
         let beam = self.crt.beam_at(self.now);
         match port {
-            0x40 => self.pit_read(),
             0x60 => self.keyboard.port60(),
-            0x42 | 0x61 => self.speaker.inb(self.now_tick(), port),
+            0x40..=0x43 | 0x61 => self.speaker.inb(self.now_tick(), port),
             _ => {
                 self.sync();
                 with_card!(&mut self.video, c => c.port_in(port, &beam))
@@ -877,76 +865,38 @@ impl Dos {
     // ---------------------------------------------------------------------------------------
     // Timer
 
-    fn pit_command(&mut self, v: u8) {
-        if v >> 6 != 0 {
-            return; // only channel 0
-        }
-        if (v >> 4) & 3 == 0 {
-            self.pit.latch = Some(self.pit_counter());
-            self.pit.read_hi = false;
-        } else {
-            self.pit.write_lo = None;
-        }
-    }
-
-    fn pit_write(&mut self, v: u8) {
-        match self.pit.write_lo.take() {
-            None => self.pit.write_lo = Some(v),
-            Some(lo) => {
-                let d = (lo as u32) | ((v as u32) << 8);
-                self.set_timer_divisor(if d == 0 { 65536 } else { d });
-            }
-        }
-    }
-
-    fn pit_counter(&self) -> u16 {
-        let ticks = ((self.now - self.pit.epoch_ns) * PIT_HZ * 1e-9) as u64;
-        let d = self.pit.divisor as u64;
-        (d - ticks % d) as u16
-    }
-
-    fn pit_read(&mut self) -> u8 {
-        let v = self.pit.latch.unwrap_or_else(|| self.pit_counter());
-        let out = if self.pit.read_hi {
-            self.pit.latch = None;
-            (v >> 8) as u8
-        } else {
-            v as u8
-        };
-        self.pit.read_hi = !self.pit.read_hi;
-        out
-    }
-
-    fn set_timer_divisor(&mut self, d: u32) {
-        self.pit.divisor = d.clamp(1, 65536);
-        self.pit.epoch_ns = self.now;
-        self.pit.taken = 0;
-    }
-
     /// Reprogram the timer interrupt rate (the PIT channel 0 divisor), like games did for a
     /// steady game tick.
     pub fn set_timer_hz(&mut self, hz: f64) {
-        let d = (PIT_HZ / hz.max(18.2)).round() as u32;
-        self.set_timer_divisor(d);
+        // A count of 0 means 65536.
+        let d = (PIT_HZ / hz.max(18.2)).round().clamp(1.0, 65536.0) as u32 as u16;
+        self.outb(0x43, 0x36); // channel 0, low then high byte, mode 3
+        self.outb(0x40, d as u8);
+        self.outb(0x40, (d >> 8) as u8);
     }
 
     /// Current timer interrupt rate.
     pub fn timer_hz(&self) -> f64 {
-        PIT_HZ / self.pit.divisor as f64
+        PIT_HZ / self.speaker.pit().channel(Channel::Ch0).divisor() as f64
     }
 
     /// Timer interrupts since the timer was last programmed.
     pub fn timer_ticks(&self) -> u64 {
-        ((self.now - self.pit.epoch_ns) * PIT_HZ * 1e-9) as u64 / self.pit.divisor as u64
+        // Edges only count since channel 0 was last programmed.
+        self.speaker.pit().irq0_edges(Tick::ZERO, self.now_tick())
     }
 
     /// Timer interrupts since the last call: run that many fixed game ticks, as an `INT 8`
     /// handler would have.
     pub fn take_timer_ticks(&mut self) -> u64 {
-        let t = self.timer_ticks();
-        let n = t - self.pit.taken.min(t);
-        self.pit.taken = t;
-        n
+        self.count_timer_ticks();
+        std::mem::take(&mut self.timer_pending)
+    }
+
+    fn count_timer_ticks(&mut self) {
+        let now = self.now_tick();
+        self.timer_pending += self.speaker.pit().irq0_edges(self.timer_taken, now);
+        self.timer_taken = now;
     }
 
     /// BIOS tick count (18.2 Hz since midnight, here since power-on).
@@ -1119,6 +1069,34 @@ mod tests {
         d.set_timer_hz(100.0);
         d.delay_us(105_000.0);
         assert_eq!(d.take_timer_ticks(), 10);
+        assert_eq!(d.take_timer_ticks(), 0);
+        assert!((d.timer_hz() - 100.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn timer_programmed_through_the_ports() {
+        let mut d = vga();
+        // Power-on: 18.2 Hz.
+        assert!((d.timer_hz() - 18.2).abs() < 0.01);
+        // A game's own INT 8 setup: channel 0, lo/hi, mode 3, 1193 (~1 kHz).
+        d.outb(0x43, 0x36);
+        d.outb(0x40, (1193u16 & 0xFF) as u8);
+        d.outb(0x40, (1193u16 >> 8) as u8);
+        d.delay_us(10_500.0);
+        assert_eq!(d.take_timer_ticks(), 10);
+        // Latch and read the counter: it counts down from the divisor.
+        d.outb(0x43, 0x00);
+        let lo = d.inb(0x40);
+        let hi = d.inb(0x40);
+        let count = u16::from_le_bytes([lo, hi]);
+        assert!((1..=1193).contains(&count), "{count}");
+        // Interrupts that fired before reprogramming are still taken; the new rate counts
+        // from the reprogram on.
+        d.delay_us(5_200.0); // ~15.7 ms since programming: edges at 11..=15 ms
+        d.set_timer_hz(100.0);
+        assert_eq!(d.timer_ticks(), 0);
+        d.delay_us(10_500.0);
+        assert_eq!(d.take_timer_ticks(), 5 + 1);
         assert_eq!(d.take_timer_ticks(), 0);
     }
 

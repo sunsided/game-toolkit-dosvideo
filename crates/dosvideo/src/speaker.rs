@@ -112,6 +112,11 @@ impl PcSpeaker {
         self.engine.play_speaker_at(music, options, at)
     }
 
+    /// The machine's only 8253 (dosaudio owns it; channel 2 drives the cone).
+    pub fn pit(&self) -> &game_toolkit_dosbus::Pit {
+        self.ports.pit().expect("the speaker installs the PIT")
+    }
+
     pub fn tone(&self) -> Option<f64> {
         self.ports.speaker_tone()
     }

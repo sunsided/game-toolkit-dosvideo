@@ -9,14 +9,14 @@ User-facing docs: `README.md`; API docs in `crates/dosvideo/src/lib.rs`.
 | File | Role |
 |------|------|
 | `crt.rs` | `Timing`, `Beam`, `Crt` (time→beam, lazy `advance` painting, front/back frame swap at vblank start), `Scanout` trait |
-| `machine.rs` | `Dos`: clock, `BusTiming` cost model, ports/memory dispatch, waits, BIOS mode set, VBE calls, PIT, input state |
+| `machine.rs` | `Dos`: clock, `BusTiming` cost model, ports/memory dispatch, waits, BIOS mode set, VBE calls, timer ticks, input state |
 | `vga.rs` | EGA/VGA core: planes, sequencer, GC (latches, write/read modes), CRTC-derived timing, attribute ctrl, DAC, mode tables |
 | `cga.rs` | `Mc6845` + CGA/Tandy (snow, composite decode, gate array) |
 | `hercules.rs`, `svga.rs` | Hercules; VBE 2.0 card wrapping a `Vga` |
 | `draw.rs`, `text.rs` | helpers on `Dos` (palette, registers, pset per layout, `ModeX`, `Bitmap`, text mode) |
 | `input.rs` | scancodes, BIOS keyboard buffer, INT 33h mouse |
 | `host.rs` | `toolkit` feature: `run`, `DosGame`, `DosScreen`, key map, headless screenshots |
-| `speaker.rs` | PC speaker on game-toolkit-dosaudio: port routing, engine rendered up to machine time, `play_speaker` |
+| `speaker.rs` | PC speaker and PIT (ports 40h-43h, 61h) on game-toolkit-dosaudio: engine rendered up to machine time, `play_speaker` |
 | `font.rs`, `png.rs`, `palette.rs` | CP437 fonts, PNG encoder, standard palettes |
 
 ## Invariants
@@ -29,7 +29,8 @@ User-facing docs: `README.md`; API docs in `crates/dosvideo/src/lib.rs`.
 - **No special cases for tweaked modes**: timing and addressing come from the registers.
   If a mode looks wrong, fix the register table or the derivation, not the renderer.
 - The core (`--no-default-features`) depends only on `game-toolkit-dosaudio` (default features
-  off: the PC speaker, and through it `game-toolkit-dosbus`'s `Tick` clock); add nothing else.
+  off: the PC speaker and the machine's one `Pit`) and `game-toolkit-dosbus` (`Tick`, `Pit`
+  types); add nothing else. Never keep a second PIT: read it through `PcSpeaker::pit`.
   It must also build for `wasm32-unknown-unknown`.
 - `#![forbid(unsafe_code)]`.
 

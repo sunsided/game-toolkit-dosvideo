@@ -29,7 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (PIT channel 2 and port `61h` on the 315/22 MHz crystal clock); the crate now depends on it,
   also without default features. `PIT_HZ` derives from the crystal (1193181.8 Hz, was
   1193182).
-  Port `42h` reads the channel 2 counter.
+- The 8253 PIT is [game-toolkit-dosbus](https://crates.io/crates/game-toolkit-dosbus)'s, owned
+  by dosaudio: ports `40h`-`43h` reach all three channels (latch, lo/hi flip-flop, modes 0, 2
+  and 3), port `61h` bit 4 follows channel 1. `set_timer_hz` programs channel 0 through the
+  ports (it now costs I/O time), and `timer_ticks` / `take_timer_ticks` count its edges.
 - **Breaking:** `speaker::Melody` is dosaudio's QBasic `PLAY` melody, sequenced tick-exact
   in the background: `Dos::play_speaker(Melody::parse(..)?, PlayOptions::default())` returns
   a `SpeakerHandle` (pause, resume, stop, volume, the sounding note's `tone`). `Melody::new`, `update`, `looped`,

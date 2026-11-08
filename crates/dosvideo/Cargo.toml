@@ -36,6 +36,7 @@ ratatui = ["dep:ratatui-core"]
 
 [dependencies]
 game-toolkit-dosaudio = { workspace = true }
+game-toolkit-dosbus = { workspace = true }
 game-toolkit = { workspace = true, optional = true }
 synthie = { workspace = true, optional = true }
 ratatui-core = { workspace = true, optional = true }

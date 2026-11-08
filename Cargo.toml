@@ -26,8 +26,10 @@ uninlined_format_args = "warn"
 
 [workspace.dependencies]
 game-toolkit = "0.11"
-# PC speaker (PIT channel 2, port 61h) and the shared crystal clock; no audio I/O.
-game-toolkit-dosaudio = { version = "0.1.2", default-features = false }
+# PC speaker and the 8253 PIT (ports 40h-43h, 61h); no audio I/O.
+game-toolkit-dosaudio = { version = "0.1.3", default-features = false }
+# The crystal clock and the PIT (owned by dosaudio's `DosAudio`).
+game-toolkit-dosbus = "0.1.2"
 env_logger = "0.11"
 ratatui-core = { version = "0.1", default-features = false }
 ratatui = { version = "0.30", default-features = false }
