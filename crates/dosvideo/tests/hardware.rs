@@ -174,6 +174,17 @@ fn mouse_in_mode_13h_reports_doubled_x() {
 }
 
 #[test]
+fn mode_set_hides_the_mouse_cursor() {
+    let mut d = instant(Adapter::Vga);
+    d.set_mode(0x03);
+    assert!(!d.mouse().visible());
+    d.mouse_mut().show();
+    assert!(d.mouse().visible());
+    d.set_mode(0x13);
+    assert!(!d.mouse().visible());
+}
+
+#[test]
 fn text_mode_shows_characters() {
     let mut d = instant(Adapter::Vga);
     d.set_mode(0x03);

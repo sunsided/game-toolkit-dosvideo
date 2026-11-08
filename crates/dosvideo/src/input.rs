@@ -237,6 +237,23 @@ impl Mouse {
         self.buttons & 4 != 0
     }
 
+    /// Function 01h: show the mouse cursor. The driver draws nothing itself (draw the pointer
+    /// in your program, e.g. with `tui::mouse_cursor` in text mode); the host hides the OS
+    /// pointer over the display while the cursor is shown. A mode set hides it again.
+    pub fn show(&mut self) {
+        self.visible = true;
+    }
+
+    /// Function 02h: hide the mouse cursor (the host shows the OS pointer again).
+    pub fn hide(&mut self) {
+        self.visible = false;
+    }
+
+    /// Whether the program has shown the mouse cursor.
+    pub fn visible(&self) -> bool {
+        self.visible
+    }
+
     /// Function 05h: how often a button was pressed since the last call.
     pub fn take_presses(&mut self, button: usize) -> u16 {
         std::mem::take(&mut self.presses[button.min(2)])

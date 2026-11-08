@@ -139,7 +139,9 @@ static PENDING: Mutex<Option<DosConfig>> = Mutex::new(None);
 /// Headless screenshots (native only): with `DOSVIDEO_SHOT=out.png` set, no window opens; the
 /// program runs for `DOSVIDEO_SHOT_FRAMES` frames (default 120) and the last finished frame is
 /// written as a PNG. `DOSVIDEO_KEYS=frame:scancode,...` taps keys (scancodes in hex or
-/// decimal) at the given frames, to drive a demo into a particular state.
+/// decimal) at the given frames, to drive a demo into a particular state, and
+/// `DOSVIDEO_MOUSE=frame:x:y:buttons,...` moves the mouse there (`x`, `y` from 0.0 to 1.0
+/// across the display, `buttons` bit 0 left, 1 right, 2 middle).
 pub fn run<G: DosGame>(config: DosConfig) -> Result<()> {
     #[cfg(not(target_arch = "wasm32"))]
     if let Ok(path) = std::env::var("DOSVIDEO_SHOT") {
@@ -201,6 +203,25 @@ fn scripted_keys() -> Vec<(u64, u8)> {
         .collect()
 }
 
+/// `DOSVIDEO_MOUSE=frame:x:y:buttons,...`: normalized position and button bits, applied in
+/// order (so a press and a release in the same frame still count as a click).
+#[cfg(not(target_arch = "wasm32"))]
+fn scripted_mouse() -> Vec<(u64, f32, f32, u8)> {
+    std::env::var("DOSVIDEO_MOUSE")
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|e| {
+            let mut it = e.split(':').map(str::trim);
+            Some((
+                it.next()?.parse().ok()?,
+                it.next()?.parse().ok()?,
+                it.next()?.parse().ok()?,
+                it.next().map_or(Some(0), |b| b.parse().ok())?,
+            ))
+        })
+        .collect()
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn headless<G: DosGame>(config: DosConfig, path: &str) -> Result<()> {
     let frames: u64 = std::env::var("DOSVIDEO_SHOT_FRAMES")
@@ -208,6 +229,8 @@ fn headless<G: DosGame>(config: DosConfig, path: &str) -> Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(120);
     let keys = scripted_keys();
+    let mouse = scripted_mouse();
+    let mut next_mouse = 0;
     let mut dos = Dos::new(config.machine);
     let mut game = G::init(&mut dos)?;
     let start = dos.frames();
@@ -232,6 +255,11 @@ fn headless<G: DosGame>(config: DosConfig, path: &str) -> Result<()> {
                     dos.keyboard_mut().press(k, ascii);
                     held.push(k);
                 }
+            }
+            while let Some(&(_, x, y, b)) = mouse.get(next_mouse).filter(|m| m.0 <= f) {
+                dos.mouse_mut().set_normalized(x, y);
+                dos.mouse_mut().set_buttons(b);
+                next_mouse += 1;
             }
             last_frame = f;
         }
@@ -393,6 +421,8 @@ struct Runner<G: DosGame> {
     /// Scripted key taps by host frame (`DOSVIDEO_KEYS`), for window screenshots.
     keys: Vec<(u64, u8)>,
     held: Vec<u8>,
+    /// Whether the OS mouse pointer is shown.
+    os_cursor: bool,
     /// Where the speaker goes, if audio is available.
     audio: Option<(SpeakerQueue, StreamHandle)>,
     audio_buf: Vec<f32>,
@@ -439,6 +469,7 @@ impl<G: DosGame> Game for Runner<G> {
             max_steps: config.max_steps_per_frame.max(1),
             host_frames: 0,
             keys: scripted_keys(),
+            os_cursor: true,
             held: Vec::new(),
             audio: start_speaker(ctx),
             audio_buf: Vec::new(),
@@ -467,6 +498,16 @@ impl<G: DosGame> Game for Runner<G> {
         } else {
             self.screen
                 .feed_input(&ctx.input, &mut self.dos, ctx.gfx.size());
+        }
+        // A program that shows the mouse cursor draws its own pointer: hide the OS one over
+        // the display, keep it over the border and the rest of the window.
+        let [x, y, w, h] = self.screen.active_rect;
+        let (mx, my) = ctx.input.mouse_pos();
+        let over = mx >= x && mx < x + w && my >= y && my < y + h;
+        let os_cursor = !(over && self.dos.mouse().visible());
+        if os_cursor != self.os_cursor {
+            self.os_cursor = os_cursor;
+            ctx.window.set_cursor_visible(os_cursor);
         }
 
         if let Some(waited) = &mut self.power_on_wait {

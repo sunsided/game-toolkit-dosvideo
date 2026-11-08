@@ -123,7 +123,8 @@ From most to least authentic, freely mixed:
    `poke_slice`, `fill`, `copy_vram`, at physical addresses (`0xA0000`, `0xB8000`, …).
 2. **BIOS**: `set_mode` (`INT 10h`), `vbe_set_mode`, `vbe_set_bank`,
    `vbe_set_display_start`, `bios_print` (teletype with scrolling), `load_font`, `getch` /
-   `kbhit` (`INT 16h`), `mouse()` (`INT 33h`), `set_timer_hz` / `take_timer_ticks` (the PIT),
+   `kbhit` (`INT 16h`), `mouse()` (`INT 33h`; `mouse_mut().show()` hides the OS pointer over the
+   display, your program draws its own), `set_timer_hz` / `take_timer_ticks` (the PIT),
    `exit` (`INT 21h, 4Ch`).
 3. **Register helpers**: `set_palette`, `cycle_palette`, `fade_palette`, `seq`, `gc`, `crtc`,
    `attr`, `map_mask`, `write_mode`, `bit_mask`, `set_start_address`, `set_offset`,
@@ -209,7 +210,9 @@ your `Dos`, `upload` and `draw`.
 
 Headless, for tests and screenshots: `DOSVIDEO_SHOT=out.png DOSVIDEO_SHOT_FRAMES=120
 cargo run --example copper_bars` writes the frame as PNG instead of opening a window, and
-`DOSVIDEO_KEYS=30:0x30,90:0x24` taps keys (by scancode) at given frames (also in window mode, counted in host frames). Those shots are the
+`DOSVIDEO_KEYS=30:0x30,90:0x24` taps keys (by scancode) at given frames (also in window mode, counted in host frames).
+`DOSVIDEO_MOUSE=30:0.5:0.1:1,35:0.5:0.1:0` scripts the mouse in headless runs (frame, x and y
+from 0 to 1 across the display, button bits). Those shots are the
 raw emulated frame; to capture the window with the CRT filter, use
 `DOSVIDEO_WINDOW_SHOT=out.png DOSVIDEO_WINDOW_SHOT_FRAMES=90`, and `DOSVIDEO_CRT=0..6` to pick
 a preset. `dos.frame()`

@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (CP437 characters, attribute bytes, the hardware cursor), with `tui::draw` to run a frame
   inside `DosGame::step`, and `tui::mouse_cell` / `tui::mouse_cursor` for the `INT 33h` text
   cursor.
+- `Mouse::show` / `Mouse::hide` (`INT 33h` functions 01h/02h): while a program shows the mouse
+  cursor, the host hides the OS pointer over the emulated display. A mode set hides it.
+- Headless runs take `DOSVIDEO_MOUSE=frame:x:y:buttons,...` to script the mouse, like
+  `DOSVIDEO_KEYS` for keys.
 
 ## [0.2.2] - 2026-11-08
 
