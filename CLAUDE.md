@@ -16,6 +16,7 @@ User-facing docs: `README.md`; API docs in `crates/dosvideo/src/lib.rs`.
 | `draw.rs`, `text.rs` | helpers on `Dos` (palette, registers, pset per layout, `ModeX`, `Bitmap`, text mode) |
 | `input.rs` | scancodes, BIOS keyboard buffer, INT 33h mouse |
 | `host.rs` | `toolkit` feature: `run`, `DosGame`, `DosScreen`, key map, headless screenshots |
+| `speaker.rs` | PC speaker on game-toolkit-dosaudio: port routing, engine rendered up to machine time, `play_speaker` |
 | `font.rs`, `png.rs`, `palette.rs` | CP437 fonts, PNG encoder, standard palettes |
 
 ## Invariants
@@ -27,8 +28,9 @@ User-facing docs: `README.md`; API docs in `crates/dosvideo/src/lib.rs`.
 - **I/O always costs time** (`MIN_IO_NS`), so status-port polling loops terminate.
 - **No special cases for tweaked modes**: timing and addressing come from the registers.
   If a mode looks wrong, fix the register table or the derivation, not the renderer.
-- The core (`--no-default-features`) has zero dependencies and must stay that way; it must
-  also build for `wasm32-unknown-unknown`.
+- The core (`--no-default-features`) depends only on `game-toolkit-dosaudio` (default features
+  off: the PC speaker, and through it `game-toolkit-dosbus`'s `Tick` clock); add nothing else.
+  It must also build for `wasm32-unknown-unknown`.
 - `#![forbid(unsafe_code)]`.
 
 ## Checking work

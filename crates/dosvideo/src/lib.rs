@@ -106,3 +106,5 @@ pub mod prelude {
 
 #[cfg(feature = "toolkit")]
 pub use game_toolkit;
+/// The sound hardware behind [`speaker`]: prepared speaker music, the crystal clock.
+pub use game_toolkit_dosaudio;

@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `text_mode` example draws its windows with ratatui: drag them by the title bar, click
   to bring one to the front, pull-down menus by mouse or `F10`. It now needs the `ratatui`
   feature.
+- The PC speaker is [game-toolkit-dosaudio](https://crates.io/crates/game-toolkit-dosaudio)'s
+  (PIT channel 2 and port `61h` on the 315/22 MHz crystal clock); the crate now depends on it,
+  also without default features. `PIT_HZ` derives from the crystal (1193181.8 Hz, was
+  1193182).
+  Port `42h` reads the channel 2 counter.
+- **Breaking:** `speaker::Melody` is dosaudio's QBasic `PLAY` melody, sequenced tick-exact
+  in the background: `Dos::play_speaker(Melody::parse(..)?, PlayOptions::default())` returns
+  a `SpeakerHandle` (pause, resume, stop, volume, the sounding note's `tone`). `Melody::new`, `update`, `looped`,
+  `restart` and `stop` are gone. `Melody::parse` rejects unknown commands, including `R`.
+- **Breaking:** `Dos::speaker_render(out)` renders at the fixed `speaker::SPEAKER_RATE`
+  (44.1 kHz) and loses its `rate` argument.
 
 ## [0.2.2] - 2026-11-08
 

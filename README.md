@@ -180,14 +180,17 @@ text mode with `dos.load_font(font, 0)`, or draw with `Bitmap::text`.
 
 ## The PC speaker
 
-PIT channel 2 and port `0x61` are emulated on the machine clock, and the speaker output is
+PIT channel 2 and port `0x61` are emulated on the machine clock by
+[game-toolkit-dosaudio](https://crates.io/crates/game-toolkit-dosaudio), and the speaker output is
 rendered by integrating the cone position over every audio sample, then played through
 game-toolkit's audio (or written to a WAV in headless runs: `DOSVIDEO_WAV=out.wav`).
 
 - `dos.sound(hz)` / `dos.nosound()`: Turbo Pascal style, or program the ports yourself
   (`OUT 43h,B6h`, the divisor to `42h`, bits 0+1 of `61h`). Port `61h` bit 4 toggles every
   15 µs like the DRAM refresh that delay loops counted.
-- `Melody::new("T140 O3 L4 EEFG GFED ...")`: QBasic `PLAY` strings, in the background.
+- `dos.play_speaker(Melody::parse("T140 O3 L4 EEFG GFED ...")?, PlayOptions::default())`:
+  QBasic `PLAY` strings, sequenced tick-exact in the background; the returned handle pauses,
+  resumes or stops it.
 - `dos.speaker_pwm(&samples, 11_025)`: digitized sound by bit-banging the speaker. It blocks
   for the length of the sound, as it did.
 - With the `synth` feature, `speaker_synth::SpeakerTracker` plays a
@@ -221,7 +224,8 @@ gives the last complete frame as RGBA anywhere, with `to_png()`.
 Features: `toolkit` (default) for the game-toolkit host, `synth` for tracker music on the PC
 speaker, `ratatui` for `tui::DosBackend`, a [ratatui](https://ratatui.rs) backend that draws
 widgets into text mode (create a `Terminal` once, call `tui::draw(&mut term, dos, |f| ...)` in
-`step`; only changed cells are written). Without the default `toolkit` feature the crate has no dependencies at all: just the machine,
+`step`; only changed cells are written). Without the default `toolkit` feature the only dependency is game-toolkit-dosaudio (the
+speaker, no audio I/O): just the machine,
 for tests or for driving it from another frontend.
 
 ## Demos

@@ -8,6 +8,7 @@ use crate::palette::Phosphor;
 use crate::speaker::PcSpeaker;
 use crate::svga::{Svga, VbeMode};
 use crate::vga::{Vga, VgaKind};
+use game_toolkit_dosaudio::Tick;
 
 /// Which display adapter is installed.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -255,8 +256,8 @@ struct Pit {
     read_hi: bool,
 }
 
-/// 1.193182 MHz.
-pub const PIT_HZ: f64 = 1_193_182.0;
+/// 1.193182 MHz: the PC crystal (315/22 MHz) divided by 12.
+pub const PIT_HZ: f64 = Tick::HZ_NUMERATOR as f64 / (Tick::HZ_DENOMINATOR * 12) as f64;
 
 /// A DOS PC with one display adapter.
 ///
@@ -341,6 +342,11 @@ impl Dos {
     /// Machine time in nanoseconds since power-on.
     pub fn now_ns(&self) -> f64 {
         self.now
+    }
+
+    /// Machine time in crystal ticks, for the sound hardware.
+    pub(crate) fn now_tick(&self) -> Tick {
+        Tick::from_secs_f64(self.now * 1e-9)
     }
 
     /// Machine time in seconds since power-on.
@@ -501,10 +507,10 @@ impl Dos {
         self.sync();
         match port {
             0x40 => self.pit_write(v),
-            0x42 => self.speaker.write_counter(self.now, v),
-            0x43 if v >> 6 == 2 => self.speaker.command(v),
+            // Port 0x43 is shared: channel 2 commands go to the speaker.
+            0x42 | 0x61 => self.speaker.outb(self.now_tick(), port, v),
+            0x43 if v >> 6 == 2 => self.speaker.outb(self.now_tick(), port, v),
             0x43 => self.pit_command(v),
-            0x61 => self.speaker.write_port61(self.now, v),
             _ => with_card!(&mut self.video, c => c.port_out(port, v)),
         }
         self.check_timing();
@@ -524,7 +530,7 @@ impl Dos {
         match port {
             0x40 => self.pit_read(),
             0x60 => self.keyboard.port60(),
-            0x61 => self.speaker.read_port61(self.now),
+            0x42 | 0x61 => self.speaker.inb(self.now_tick(), port),
             _ => {
                 self.sync();
                 with_card!(&mut self.video, c => c.port_in(port, &beam))

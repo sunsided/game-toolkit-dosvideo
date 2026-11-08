@@ -7,225 +7,113 @@
 //!   fast enough, with varying duty cycles, plays (rough) digitized sound: the trick behind
 //!   RealSound and countless title screens that froze the game while they talked.
 //!   [`Dos::speaker_pwm`] does it.
+//! - **Music**: [`Dos::play_speaker`] sequences a [`Melody`] (QBasic `PLAY`) or a prepared
+//!   PWM stream ([`game_toolkit_dosaudio::speaker_pwm`]) in the background, tick-exact.
 //!
-//! Every change is timestamped on the machine clock and rendered to PCM later by integrating
-//! the cone position over each output sample, so ultrasonic carriers average out like they did
-//! in the real cone, and pulse widths become amplitudes.
-//!
-//! [`Melody`] plays QBasic `PLAY` strings in the background, one call per main-loop pass.
+//! The hardware is [game-toolkit-dosaudio](https://docs.rs/game-toolkit-dosaudio)'s speaker:
+//! every port access is timestamped on the machine clock and rendered to PCM later by
+//! integrating the cone position over each output sample, so ultrasonic carriers average out
+//! like they did in the real cone, and pulse widths become amplitudes.
 
-use std::collections::VecDeque;
+use game_toolkit_dosaudio::{AudioEngine, DosAudio, PreparedMusic, SoundConfig, Tick};
 
-use crate::machine::{Dos, PIT_HZ};
+pub use game_toolkit_dosaudio::{Melody, PlayOptions, SpeakerHandle};
 
-/// The speaker's state from a point in time on.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct State {
-    /// Port 0x61 bit 0: PIT channel 2 gate.
-    gate: bool,
-    /// Port 0x61 bit 1: speaker data (cone driven by the timer output, or held low).
-    data: bool,
-    /// Channel 2 divisor.
-    divisor: u32,
-    /// Machine time (ns) the counter was loaded.
-    epoch: f64,
-}
+use crate::machine::Dos;
 
-impl State {
-    /// Average cone position (0..1) over `[ta, tb)` in ns.
-    fn average(&self, ta: f64, tb: f64) -> f64 {
-        if !self.data {
-            return 0.0;
-        }
-        if !self.gate {
-            // Mode 3 with the gate low holds the output high.
-            return 1.0;
-        }
-        let d = self.divisor as f64;
-        let h = (self.divisor as f64 / 2.0).ceil();
-        let high = |x: f64| {
-            let x = x.max(0.0);
-            (x / d).floor() * h + (x % d).min(h)
-        };
-        let k = PIT_HZ * 1e-9;
-        let x0 = (ta - self.epoch) * k;
-        let x1 = (tb - self.epoch) * k;
-        if x1 <= x0 {
-            return 0.0;
-        }
-        (high(x1) - high(x0)) / (x1 - x0)
-    }
+/// Output rate of [`Dos::speaker_render`], in Hz.
+pub const SPEAKER_RATE: u32 = 44_100;
 
-    /// Output level at time `t` (for reading port 0x61 bit 5).
-    fn out2(&self, t: f64) -> bool {
-        if !self.gate {
-            return true;
-        }
-        let x = ((t - self.epoch) * PIT_HZ * 1e-9).max(0.0);
-        x % self.divisor as f64 <= (self.divisor as f64 / 2.0).ceil()
-    }
-}
+/// Audio kept when the command queue fills up between two [`Dos::speaker_render`] calls
+/// (nobody renders, or a long bit-banged sample): older samples are dropped.
+const BACKLOG_MAX: usize = SPEAKER_RATE as usize;
 
-/// Speaker hardware state and its change log.
+/// The speaker's port half and its synthesis half, both run on the machine clock.
 pub(crate) struct PcSpeaker {
-    cur: State,
-    /// Changes not yet rendered, with the time they take effect.
-    pending: VecDeque<(f64, State)>,
-    /// Rendered up to this machine time.
-    rendered: f64,
-    write_lo: Option<u8>,
-    hp_x: f64,
-    hp_y: f64,
-    lp: f64,
-    lp2: f64,
-    pub(crate) port61: u8,
+    ports: DosAudio,
+    engine: AudioEngine,
+    /// Rendered early to make room in the command queue, not yet taken.
+    backlog: Vec<f32>,
 }
-
-/// Changes kept when nobody renders audio (no host audio, headless): older ones are dropped.
-const MAX_PENDING: usize = 1 << 16;
 
 impl PcSpeaker {
     pub fn new() -> Self {
+        let config = SoundConfig::none()
+            .speaker(true)
+            .sample_rate(SPEAKER_RATE)
+            .latency(Tick::ZERO);
+        let (ports, engine) = DosAudio::split(config).expect("PC speaker configuration is valid");
         Self {
-            cur: State {
-                gate: false,
-                data: false,
-                divisor: 65536,
-                epoch: 0.0,
-            },
-            pending: VecDeque::new(),
-            rendered: 0.0,
-            write_lo: None,
-            hp_x: 0.0,
-            hp_y: 0.0,
-            lp: 0.0,
-            lp2: 0.0,
-            port61: 0,
+            ports,
+            engine,
+            backlog: Vec::new(),
         }
     }
 
-    fn latest(&self) -> State {
-        self.pending.back().map_or(self.cur, |p| p.1)
-    }
-
-    fn change(&mut self, t: f64, f: impl FnOnce(&mut State)) {
-        let mut s = self.latest();
-        f(&mut s);
-        if s != self.latest() {
-            if self.pending.len() >= MAX_PENDING
-                && let Some((t0, s0)) = self.pending.pop_front()
-            {
-                self.cur = s0;
-                self.rendered = self.rendered.max(t0);
-            }
-            self.pending.push_back((t, s));
+    /// Ports 0x42, 0x43 (channel 2 commands only) and 0x61.
+    pub fn outb(&mut self, at: Tick, port: u16, v: u8) {
+        if self.ports.try_outb_at(at, port, v).is_err() {
+            // The queue is full: render what it holds, then write again.
+            self.make_room(at);
+            self.ports
+                .try_outb_at(at, port, v)
+                .expect("speaker command queue has room after rendering");
         }
     }
 
-    /// Port 0x43 with channel 2 selected.
-    pub fn command(&mut self, _v: u8) {
-        self.write_lo = None;
+    pub fn inb(&mut self, at: Tick, port: u16) -> u8 {
+        self.ports
+            .try_inb_at(at, port)
+            .expect("machine time runs forward")
     }
 
-    /// Port 0x42: the divisor, low byte then high byte.
-    pub fn write_counter(&mut self, t: f64, v: u8) {
-        match self.write_lo.take() {
-            None => self.write_lo = Some(v),
-            Some(lo) => {
-                let d = (lo as u32) | ((v as u32) << 8);
-                let d = if d == 0 { 65536 } else { d };
-                self.change(t, |s| {
-                    s.divisor = d;
-                    s.epoch = t;
-                });
-            }
+    /// Render up to `at`, appending mono samples to `out`.
+    fn render(&mut self, at: Tick, out: &mut Vec<f32>) {
+        let target =
+            (u128::from(at.0) * u128::from(SPEAKER_RATE) * u128::from(Tick::HZ_DENOMINATOR)
+                / u128::from(Tick::HZ_NUMERATOR)) as u64;
+        let mut frames = [[0.0f32; 2]; 512];
+        let mut left = target.saturating_sub(self.engine.stats().frames);
+        while left > 0 {
+            let n = left.min(frames.len() as u64) as usize;
+            self.engine.render(&mut frames[..n]);
+            // The speaker is mono: both channels carry it.
+            out.extend(frames[..n].iter().map(|f| f[0]));
+            left -= n as u64;
         }
     }
 
-    pub fn write_port61(&mut self, t: f64, v: u8) {
-        self.port61 = v;
-        self.change(t, |s| {
-            s.gate = v & 1 != 0;
-            s.data = v & 2 != 0;
-        });
+    fn make_room(&mut self, at: Tick) {
+        let mut backlog = std::mem::take(&mut self.backlog);
+        self.render(at, &mut backlog);
+        let excess = backlog.len().saturating_sub(BACKLOG_MAX);
+        backlog.drain(..excess);
+        self.backlog = backlog;
     }
 
-    pub fn read_port61(&self, t: f64) -> u8 {
-        // Bit 4 toggles with every DRAM refresh cycle (~15 µs): a free-running timer that
-        // delay loops counted. Bit 5 is the channel 2 output.
-        let refresh = ((t / 15_085.0) as u64 & 1) as u8;
-        let s = self.state_at(t);
-        (self.port61 & 0x0F) | (refresh << 4) | (u8::from(s.out2(t)) << 5)
+    pub fn take(&mut self, at: Tick, out: &mut Vec<f32>) {
+        out.append(&mut self.backlog);
+        self.render(at, out);
     }
 
-    fn state_at(&self, t: f64) -> State {
-        let mut s = self.cur;
-        for &(pt, ps) in &self.pending {
-            if pt <= t {
-                s = ps;
-            } else {
-                break;
-            }
-        }
-        s
+    pub fn skip(&mut self, at: Tick) {
+        // The engine still has to run: it consumes the queued port writes.
+        self.make_room(at);
+        self.backlog.clear();
     }
 
-    /// Is the speaker currently making a sound (gate and data on)?
-    pub fn tone_on(&self) -> bool {
-        let s = self.latest();
-        s.gate && s.data
+    pub fn play(
+        &mut self,
+        at: Tick,
+        music: PreparedMusic,
+        options: PlayOptions,
+    ) -> game_toolkit_dosaudio::Result<SpeakerHandle> {
+        // The engine renders behind the machine clock: start at machine time, not its own.
+        self.engine.play_speaker_at(music, options, at)
     }
 
-    pub fn divisor(&self) -> u32 {
-        self.latest().divisor
-    }
-
-    /// Render samples from the last rendered time up to `until` (ns) at `rate` Hz, appending
-    /// to `out` (mono, -1..1).
-    pub fn render(&mut self, until: f64, rate: u32, out: &mut Vec<f32>) {
-        let dt = 1e9 / rate as f64;
-        // High-pass (cone and coupling: no DC) ~20 Hz; two-pole low-pass (a small cone's
-        // inertia) ~7 kHz, which also tames PWM carriers.
-        let a_hp = 1.0 / (1.0 + 2.0 * std::f64::consts::PI * 20.0 / rate as f64);
-        let a_lp = 1.0 - (-2.0 * std::f64::consts::PI * 7_000.0 / rate as f64).exp();
-        while self.rendered + dt <= until {
-            let t0 = self.rendered;
-            let t1 = t0 + dt;
-            let mut acc = 0.0;
-            let mut t = t0;
-            while t < t1 {
-                let next = self.pending.front().map_or(f64::INFINITY, |p| p.0);
-                if next <= t {
-                    if let Some((_, s)) = self.pending.pop_front() {
-                        self.cur = s;
-                    }
-                    continue;
-                }
-                let e = t1.min(next);
-                acc += self.cur.average(t, e) * (e - t);
-                t = e;
-            }
-            let x = acc / dt;
-            let y = a_hp * (self.hp_y + x - self.hp_x);
-            self.hp_x = x;
-            self.hp_y = y;
-            self.lp += a_lp * (y - self.lp);
-            self.lp2 += a_lp * (self.lp - self.lp2);
-            out.push((self.lp2 * 0.5) as f32);
-            self.rendered = t1;
-        }
-    }
-
-    /// Forget everything before `t` (skip rendering).
-    pub fn skip_to(&mut self, t: f64) {
-        while let Some(&(pt, s)) = self.pending.front() {
-            if pt > t {
-                break;
-            }
-            self.cur = s;
-            self.pending.pop_front();
-        }
-        self.rendered = self.rendered.max(t);
+    pub fn tone(&self) -> Option<f64> {
+        self.ports.speaker_tone()
     }
 }
 
@@ -233,7 +121,7 @@ impl Dos {
     /// Play a tone on the PC speaker until [`Dos::nosound`] (Turbo Pascal's `Sound`): program
     /// PIT channel 2 for a square wave at `hz` and connect it to the speaker.
     pub fn sound(&mut self, hz: f64) {
-        let d = (PIT_HZ / hz.max(19.0)).round().clamp(1.0, 65535.0) as u16;
+        let d = (crate::PIT_HZ / hz.max(19.0)).round().clamp(1.0, 65535.0) as u16;
         self.outb(0x43, 0xB6);
         self.outb(0x42, d as u8);
         self.outb(0x42, (d >> 8) as u8);
@@ -250,7 +138,8 @@ impl Dos {
     /// Play 8-bit unsigned samples by bit-banging the speaker (pulse-width modulation with the
     /// timer gate off). Like on the real thing this takes all the CPU: the call returns when
     /// the sound is over, `samples.len() / rate` seconds of machine time later, and the screen
-    /// does not change meanwhile.
+    /// does not change meanwhile. To play samples in the background instead, prepare them
+    /// with [`game_toolkit_dosaudio::speaker_pwm`] and hand them to [`Dos::play_speaker`].
     pub fn speaker_pwm(&mut self, samples: &[u8], rate: u32) {
         let period = 1e9 / rate.max(1) as f64;
         let base = self.inb(0x61) & !0x03;
@@ -268,246 +157,51 @@ impl Dos {
         self.idle_until(start + samples.len() as f64 * period);
     }
 
-    /// Render the speaker output from where the last call stopped up to now, at `rate` Hz,
-    /// appending mono samples in -1..1 to `out`. The host calls this; call it yourself to
-    /// capture sound without the game-toolkit host.
-    pub fn speaker_render(&mut self, rate: u32, out: &mut Vec<f32>) {
-        let now = self.now_ns();
-        self.speaker.render(now, rate, out);
+    /// Sequence a [`Melody`] (or other prepared speaker music) in the background, starting now
+    /// and replacing what [`Dos::play_speaker`] played before. Notes switch at their exact
+    /// machine times, independent of the main loop. Port writes ([`Dos::sound`], ...) drive the
+    /// same speaker, so pause the handle while the program beeps on its own; dropping the last
+    /// clone of the handle stops the music.
+    ///
+    /// ```
+    /// # use game_toolkit_dosvideo::{Dos, MachineConfig, speaker::{Melody, PlayOptions}};
+    /// let mut dos = Dos::new(MachineConfig::default());
+    /// let tune = dos.play_speaker(Melody::parse("T180 O3 L8 CEG>C")?, PlayOptions::default())?;
+    /// dos.delay_us(1_000_000.0);
+    /// let mut pcm = Vec::new();
+    /// dos.speaker_render(&mut pcm);
+    /// assert!(tune.is_finished());
+    /// # Ok::<(), game_toolkit_dosvideo::game_toolkit_dosaudio::Error>(())
+    /// ```
+    pub fn play_speaker(
+        &mut self,
+        music: impl Into<PreparedMusic>,
+        options: PlayOptions,
+    ) -> game_toolkit_dosaudio::Result<SpeakerHandle> {
+        let at = self.now_tick();
+        self.speaker.play(at, music.into(), options)
+    }
+
+    /// Render the speaker output from where the last call stopped up to now, at
+    /// [`SPEAKER_RATE`], appending mono samples in -1..1 to `out`. The host calls this; call it
+    /// yourself to capture sound without the game-toolkit host.
+    pub fn speaker_render(&mut self, out: &mut Vec<f32>) {
+        let at = self.now_tick();
+        self.speaker.take(at, out);
     }
 
     /// Drop speaker output up to now without rendering it.
     pub fn speaker_skip(&mut self) {
-        let now = self.now_ns();
-        self.speaker.skip_to(now);
+        let at = self.now_tick();
+        self.speaker.skip(at);
     }
 
-    /// The tone currently playing, in Hz (`None` when the speaker is off or bit-banged).
+    /// The tone the ports currently play, in Hz (`None` when the speaker is off or bit-banged).
+    /// Music from [`Dos::play_speaker`] does not show here: ask its handle
+    /// ([`SpeakerHandle::tone`]).
     pub fn speaker_tone(&self) -> Option<f64> {
-        self.speaker
-            .tone_on()
-            .then(|| PIT_HZ / self.speaker.divisor() as f64)
+        self.speaker.tone()
     }
-}
-
-/// Note lengths are in whole notes; articulation is the fraction of a note that sounds.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Event {
-    /// Frequency in Hz, `None` for a rest.
-    hz: Option<f64>,
-    /// Duration in seconds.
-    dur: f64,
-    /// Part of the duration that sounds.
-    on: f64,
-}
-
-/// A tune in QBasic `PLAY` notation, played in the background on the PC speaker.
-///
-/// Octave 3 starts at middle C (`O3 A` is 440 Hz), the default octave is 4, the default tempo
-/// 120 and the default length a quarter note, as in QBasic.
-///
-/// Supported: notes `A`-`G` with `#`/`+` (sharp) and `-` (flat), a length after the note (`C8`),
-/// dots (`C4.`), `N0`-`N84` (note number), `O0`-`O6` (octave), `<` / `>` (octave down / up),
-/// `L1`-`L64` (default length), `T32`-`T255` (tempo, quarter notes per minute), `P` / `R`
-/// (pause, same lengths), `MS` / `MN` / `ML` (staccato, normal, legato). `MF` / `MB` are
-/// accepted and ignored: this always plays in the background.
-///
-/// Call [`Melody::update`] once per pass of the main loop; it switches the speaker at the right
-/// machine times (as precisely as the loop runs).
-#[derive(Clone, Debug)]
-pub struct Melody {
-    events: Vec<Event>,
-    start: Option<f64>,
-    index: usize,
-    sounding: bool,
-    looped: bool,
-}
-
-impl Melody {
-    /// Parse a `PLAY` string. Unknown characters are skipped.
-    pub fn new(play: &str) -> Self {
-        Self {
-            events: parse_play(play),
-            start: None,
-            index: 0,
-            sounding: false,
-            looped: false,
-        }
-    }
-
-    /// Start over when the end is reached.
-    pub fn looped(mut self, on: bool) -> Self {
-        self.looped = on;
-        self
-    }
-
-    /// Length in seconds.
-    pub fn duration(&self) -> f64 {
-        self.events.iter().map(|e| e.dur).sum()
-    }
-
-    pub fn is_done(&self) -> bool {
-        !self.looped && self.start.is_some() && self.index >= self.events.len()
-    }
-
-    /// Restart from the beginning at the next update.
-    pub fn restart(&mut self) {
-        self.start = None;
-        self.index = 0;
-    }
-
-    /// Stop and silence the speaker.
-    pub fn stop(&mut self, dos: &mut Dos) {
-        self.index = self.events.len();
-        self.looped = false;
-        if self.sounding {
-            dos.nosound();
-            self.sounding = false;
-        }
-    }
-
-    /// Advance to the machine's current time, switching tones as needed.
-    pub fn update(&mut self, dos: &mut Dos) {
-        if self.events.is_empty() {
-            return;
-        }
-        let now = dos.now();
-        let start = *self.start.get_or_insert(now);
-        let mut t = start
-            + self.events[..self.index.min(self.events.len())]
-                .iter()
-                .map(|e| e.dur)
-                .sum::<f64>();
-        loop {
-            if self.index >= self.events.len() {
-                if self.looped {
-                    self.index = 0;
-                    self.start = Some(t);
-                    continue;
-                }
-                if self.sounding {
-                    dos.nosound();
-                    self.sounding = false;
-                }
-                return;
-            }
-            let e = self.events[self.index];
-            let want = if now < t + e.on { e.hz } else { None };
-            if now >= t + e.dur {
-                self.index += 1;
-                t += e.dur;
-                continue;
-            }
-            match want {
-                Some(hz) => {
-                    if !self.sounding
-                        || dos
-                            .speaker_tone()
-                            .is_none_or(|f| (f - hz).abs() > hz * 0.01)
-                    {
-                        dos.sound(hz);
-                        self.sounding = true;
-                    }
-                }
-                None => {
-                    if self.sounding {
-                        dos.nosound();
-                        self.sounding = false;
-                    }
-                }
-            }
-            return;
-        }
-    }
-}
-
-fn parse_play(s: &str) -> Vec<Event> {
-    let b: Vec<u8> = s.to_ascii_uppercase().into_bytes();
-    let mut i = 0;
-    let mut octave: i32 = 4;
-    let mut length = 4.0f64;
-    let mut tempo = 120.0f64;
-    let mut art = 7.0 / 8.0;
-    let mut out = Vec::new();
-    let num = |i: &mut usize| -> Option<u32> {
-        let st = *i;
-        while *i < b.len() && b[*i].is_ascii_digit() {
-            *i += 1;
-        }
-        std::str::from_utf8(&b[st..*i]).ok()?.parse().ok()
-    };
-    let dots = |i: &mut usize| -> f64 {
-        let mut m = 1.0;
-        let mut add = 0.5;
-        while *i < b.len() && b[*i] == b'.' {
-            m += add;
-            add /= 2.0;
-            *i += 1;
-        }
-        m
-    };
-    // Seconds of a note of length `l` (4 = quarter).
-    let secs = |l: f64, tempo: f64| 60.0 / tempo * 4.0 / l;
-    // Note number n: 1 = C in octave 0 ... 84; A in octave 3 (n = 46) is 440 Hz.
-    let freq = |n: i32| 440.0 * 2f64.powf((n - 46) as f64 / 12.0);
-    while i < b.len() {
-        let c = b[i];
-        i += 1;
-        match c {
-            b'A'..=b'G' => {
-                let semis = [9, 11, 0, 2, 4, 5, 7][(c - b'A') as usize];
-                let mut n = octave * 12 + semis + 1;
-                if i < b.len() && (b[i] == b'#' || b[i] == b'+') {
-                    n += 1;
-                    i += 1;
-                } else if i < b.len() && b[i] == b'-' {
-                    n -= 1;
-                    i += 1;
-                }
-                let l = num(&mut i).map_or(length, |v| v.clamp(1, 64) as f64);
-                let d = secs(l, tempo) * dots(&mut i);
-                out.push(Event {
-                    hz: Some(freq(n)),
-                    dur: d,
-                    on: d * art,
-                });
-            }
-            b'N' => {
-                let n = num(&mut i).unwrap_or(0) as i32;
-                let d = secs(length, tempo) * dots(&mut i);
-                out.push(Event {
-                    hz: (n > 0).then(|| freq(n)),
-                    dur: d,
-                    on: d * art,
-                });
-            }
-            b'P' | b'R' => {
-                let l = num(&mut i).map_or(length, |v| v.clamp(1, 64) as f64);
-                let d = secs(l, tempo) * dots(&mut i);
-                out.push(Event {
-                    hz: None,
-                    dur: d,
-                    on: 0.0,
-                });
-            }
-            b'O' => octave = num(&mut i).unwrap_or(4).min(6) as i32,
-            b'<' => octave = (octave - 1).max(0),
-            b'>' => octave = (octave + 1).min(6),
-            b'L' => length = num(&mut i).unwrap_or(4).clamp(1, 64) as f64,
-            b'T' => tempo = num(&mut i).unwrap_or(120).clamp(32, 255) as f64,
-            b'M' if i < b.len() => {
-                match b[i] {
-                    b'S' => art = 3.0 / 4.0,
-                    b'N' => art = 7.0 / 8.0,
-                    b'L' => art = 1.0,
-                    _ => {}
-                }
-                i += 1;
-            }
-            _ => {}
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -531,15 +225,15 @@ mod tests {
         d.sound(440.0);
         d.delay_us(500_000.0);
         let mut out = Vec::new();
-        d.speaker_render(44_100, &mut out);
+        d.speaker_render(&mut out);
         assert!((out.len() as i64 - 22_050).abs() < 5);
         let tail = &out[4410..];
-        assert!((crossings_hz(tail, 44_100) - 440.0).abs() < 5.0);
+        assert!((crossings_hz(tail, SPEAKER_RATE) - 440.0).abs() < 5.0);
         assert!(tail.iter().any(|&v| v > 0.1));
         d.nosound();
         d.delay_us(500_000.0);
         let mut quiet = Vec::new();
-        d.speaker_render(44_100, &mut quiet);
+        d.speaker_render(&mut quiet);
         assert!(
             quiet[8000..].iter().all(|v| v.abs() < 0.01),
             "silence after nosound"
@@ -556,6 +250,8 @@ mod tests {
         d.sound(1000.0);
         assert_eq!(d.inb(0x61) & 0x03, 0x03);
         assert!(d.speaker_tone().is_some_and(|f| (f - 1000.0).abs() < 1.0));
+        d.nosound();
+        assert!(d.speaker_tone().is_none());
     }
 
     #[test]
@@ -571,43 +267,46 @@ mod tests {
         d.speaker_pwm(&s, 16_000);
         assert!((d.now() - t0 - 0.5).abs() < 0.01);
         let mut out = Vec::new();
-        d.speaker_render(44_100, &mut out);
+        d.speaker_render(&mut out);
         // Smooth out what is left of the 16 kHz carrier, then count.
         let smooth: Vec<f32> = out
             .windows(8)
             .map(|w| w.iter().sum::<f32>() / 8.0)
             .collect();
         let tail = &smooth[4410..smooth.len() - 100];
-        let hz = crossings_hz(tail, 44_100);
+        let hz = crossings_hz(tail, SPEAKER_RATE);
         assert!((hz - 500.0).abs() < 15.0, "{hz}");
     }
 
     #[test]
-    fn play_strings() {
-        let e = parse_play("T120 L4 O3 A P4 >C8. MS N46"); // QBasic: O3 A = 440 Hz
-        assert_eq!(e.len(), 4);
-        assert!((e[0].hz.unwrap() - 440.0).abs() < 0.01);
-        assert!((e[0].dur - 0.5).abs() < 1e-9);
-        assert_eq!(e[1].hz, None);
-        assert!((e[2].hz.unwrap() - 523.25).abs() < 0.1);
-        assert!((e[2].dur - 0.375).abs() < 1e-9);
-        assert!((e[3].on / e[3].dur - 0.75).abs() < 1e-9);
-        let m = Melody::new("T240 L8 CDEFGAB>C");
-        assert!((m.duration() - 1.0).abs() < 1e-9); // 8 eighths at 240 bpm
+    fn long_bit_banging_overflows_into_the_backlog() {
+        let mut d = dos();
+        // 3 s at 16 kHz: two port writes per sample, far beyond the command queue.
+        d.speaker_pwm(&vec![128; 48_000], 16_000);
+        let mut out = Vec::new();
+        d.speaker_render(&mut out);
+        assert!(out.len() >= BACKLOG_MAX, "{}", out.len());
     }
 
     #[test]
-    fn melody_drives_the_speaker() {
+    fn melody_plays_in_the_background() {
         let mut d = dos();
-        let mut m = Melody::new("T120 L4 O3 A B");
-        m.update(&mut d);
-        assert!(d.speaker_tone().is_some_and(|f| (f - 440.0).abs() < 1.0));
-        d.delay_us(600_000.0);
-        m.update(&mut d);
-        assert!(d.speaker_tone().is_some_and(|f| (f - 493.9).abs() < 1.0));
-        d.delay_us(600_000.0);
-        m.update(&mut d);
-        assert!(m.is_done());
-        assert!(d.speaker_tone().is_none());
+        // O3 A is 440 Hz; T120 L4 makes each note half a second.
+        let tune = d
+            .play_speaker(
+                Melody::parse("T120 L4 ML O3 A").unwrap(),
+                PlayOptions::default(),
+            )
+            .unwrap();
+        d.delay_us(400_000.0);
+        let mut out = Vec::new();
+        d.speaker_render(&mut out);
+        let hz = crossings_hz(&out[4410..], SPEAKER_RATE);
+        assert!((hz - 440.0).abs() < 5.0, "{hz}");
+        assert!(d.speaker_tone().is_none(), "music does not touch the ports");
+        assert!(tune.tone().is_some_and(|f| (f - 440.0).abs() < 1.0));
+        d.delay_us(200_000.0);
+        d.speaker_render(&mut out);
+        assert!(tune.is_finished());
     }
 }

@@ -14,6 +14,7 @@
 
 use game_toolkit_dosvideo::palette::color::*;
 use game_toolkit_dosvideo::prelude::*;
+use game_toolkit_dosvideo::speaker::{PlayOptions, SpeakerHandle};
 use game_toolkit_dosvideo::speaker_synth::{SpeakerTracker, Voicing};
 use game_toolkit_dosvideo::text::{BOX_DOUBLE, BOX_SINGLE, attr};
 
@@ -49,7 +50,7 @@ struct Speaker {
     tracker: Option<SpeakerTracker>,
     voicing: Voicing,
     octave: i32,
-    melody: Option<Melody>,
+    melody: Option<SpeakerHandle>,
     sfx: Option<(Sfx, u32)>,
     rng: u32,
     history: Vec<Option<f64>>,
@@ -167,8 +168,8 @@ impl Speaker {
     }
 
     fn draw_status(&self, dos: &mut Dos) {
-        let tone = dos
-            .speaker_tone()
+        let tone = self
+            .tone(dos)
             .map_or("  silent  ".to_string(), |f| format!("{f:7.1} Hz"));
         dos.text_fill(3, 23, 75, 1, b' ', attr(LIGHT_GRAY, BLUE));
         dos.text_print(
@@ -184,6 +185,14 @@ impl Speaker {
             self.octave
         );
         dos.text_print(5, 11, &format!("{music:<42}"), attr(LIGHT_GRAY, BLUE));
+    }
+
+    /// What the speaker plays: the background melody's note, or what the ports set.
+    fn tone(&self, dos: &Dos) -> Option<f64> {
+        self.melody
+            .as_ref()
+            .and_then(SpeakerHandle::tone)
+            .or_else(|| dos.speaker_tone())
     }
 
     fn sfx_pitch(&mut self) -> Option<f64> {
@@ -255,7 +264,9 @@ impl DosGame for Speaker {
                     }
                 }
                 sc::Q => {
-                    self.melody = Some(Melody::new(ODE_TO_JOY));
+                    let tune = Melody::parse(ODE_TO_JOY).expect("valid PLAY string");
+                    dos.nosound();
+                    self.melody = dos.play_speaker(tune, PlayOptions::default()).ok();
                     self.status = "PLAY \"T140 O3 L4 EEFG GFED ...\"".into();
                 }
                 sc::Z => self.sfx = Some((Sfx::Laser, 0)),
@@ -289,6 +300,9 @@ impl DosGame for Speaker {
             .map(|p| piano_hz(p.2));
         let sfx = self.sfx_pitch();
         if let Some(hz) = piano.or(sfx) {
+            if let Some(m) = &self.melody {
+                m.pause();
+            }
             if let Some(t) = &mut self.tracker {
                 // Keep the song's position moving underneath, but silenced.
                 t.update(dos);
@@ -297,9 +311,14 @@ impl DosGame for Speaker {
             if dos.speaker_tone().is_none_or(|f| (f - hz).abs() > 0.5) {
                 dos.sound(hz);
             }
-        } else if let Some(m) = &mut self.melody {
-            m.update(dos);
-            if m.is_done() {
+        } else if let Some(m) = &self.melody {
+            // The melody plays on its own (tick-exact, on the audio side): only hand the
+            // speaker back after the piano or an effect.
+            if m.is_paused() {
+                dos.nosound();
+                m.resume();
+            }
+            if m.is_finished() {
                 self.melody = None;
             }
         } else if let Some(t) = &mut self.tracker {
@@ -308,7 +327,7 @@ impl DosGame for Speaker {
             dos.nosound();
         }
 
-        self.history.push(dos.speaker_tone());
+        self.history.push(self.tone(dos));
         if self.history.len() > 200 {
             self.history.drain(..100);
         }

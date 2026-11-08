@@ -964,11 +964,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "game-toolkit-dosaudio"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d260de27b04fea1b36bd4210e3dd6147b5c713e6dd02f74d38b1c13be00bec58"
+dependencies = [
+ "game-toolkit-dosbus",
+ "rtrb",
+]
+
+[[package]]
+name = "game-toolkit-dosbus"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76a15bbc5cc7717fffb6332273b5ede534bb48bd7320dff56290ac0b85a72d6f"
+
+[[package]]
 name = "game-toolkit-dosvideo"
 version = "0.2.2"
 dependencies = [
  "env_logger",
  "game-toolkit",
+ "game-toolkit-dosaudio",
  "ratatui",
  "ratatui-core",
  "synthie",

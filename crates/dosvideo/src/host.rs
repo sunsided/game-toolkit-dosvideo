@@ -272,7 +272,7 @@ fn headless<G: DosGame>(config: DosConfig, path: &str) -> Result<()> {
         guard += 1;
         anyhow::ensure!(guard < 50_000_000, "program makes no progress");
         if wav_path.is_some() {
-            dos.speaker_render(AUDIO_RATE, &mut audio);
+            dos.speaker_render(&mut audio);
         } else {
             dos.speaker_skip();
         }
@@ -305,7 +305,7 @@ fn start_speaker(ctx: &mut Context) -> Option<(SpeakerQueue, StreamHandle)> {
 }
 
 /// Output rate of the PC speaker.
-const AUDIO_RATE: u32 = 44_100;
+const AUDIO_RATE: u32 = crate::speaker::SPEAKER_RATE;
 
 /// Mono 16-bit PCM WAV.
 #[cfg(not(target_arch = "wasm32"))]
@@ -541,7 +541,7 @@ impl<G: DosGame> Game for Runner<G> {
         // Hand the speaker output of this frame to the audio thread.
         if let Some((q, _)) = &self.audio {
             self.audio_buf.clear();
-            self.dos.speaker_render(AUDIO_RATE, &mut self.audio_buf);
+            self.dos.speaker_render(&mut self.audio_buf);
             q.push(&self.audio_buf);
         } else {
             self.dos.speaker_skip();
