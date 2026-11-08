@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `DosConfig::with_canvas_id`: render into an existing `<canvas>` on the web.
+- `font_diff` example: compares the built-in fonts with a raw font file (side by side,
+  overlay, either font alone).
+
+### Changed
+
+- `Font::vga`, `Font::ega` and `Font::cga` are the VGA BIOS 8x16, 8x14 and 8x8 fonts from
+  Joseph Gil's public-domain fntcol16 collection, replacing the `u_vga16`-derived 8x16 font and
+  the 8x14/8x8 sets squashed from it. The 8x14 font now matches IBM's pixel for pixel,
+  including its vertical placement; the SGA variants keep the ROM glyphs outside the letters.
+
+### Fixed
+
+- The VGA/EGA overscan border is centered: horizontal blanking lags the CRTC compare by one
+  character clock, as on real hardware. Mode 10h had 16 border dots on the left and none on
+  the right; now it has 8 on each side.
+- PC speaker crackle, mostly on the web: the runner keeps about 100 ms of audio queued,
+  rebuilds that cushion after an underrun, and runs the machine up to 5% faster or slower to
+  follow the audio device's clock. Audio queued while the canvas was off the page is dropped.
+- Sound played in the first second after startup was lost on the web: the runner now holds
+  the machine for up to 1.6 s until audio has started.
+
+Thanks to the gorillas.rs port for finding and measuring these.
+
 ## [0.2.1] - 2026-11-06
 
 ### Fixed

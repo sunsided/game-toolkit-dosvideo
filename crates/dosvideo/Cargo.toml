@@ -57,6 +57,10 @@ name = "tearing_lab"
 required-features = ["toolkit"]
 
 [[example]]
+name = "font_diff"
+required-features = ["toolkit"]
+
+[[example]]
 name = "ega_scroller"
 required-features = ["toolkit"]
 

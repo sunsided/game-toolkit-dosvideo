@@ -1,11 +1,14 @@
 //! Code page 437 bitmap fonts, the character sets of the PC adapters.
 //!
-//! The 8x16 set is the VGA font; the 8x14 (EGA, MDA/Hercules) and 8x8 (CGA, and VGA's 50-line
-//! text) sets are derived from it. Load your own with [`Font::from_raw`].
+//! The 8x8, 8x14 and 8x16 sets are the VGA BIOS fonts, as collected (public domain) in Joseph
+//! Gil's fntcol16 (`VGA-ROM.F08/F14/F16`, notice in `fonts/COPYLEFT-fntcol16.TXT`). Load your
+//! own with [`Font::from_raw`].
 
 use std::sync::OnceLock;
 
-static VGA16: &[u8; 4096] = include_bytes!("../fonts/cp437_8x16.bin");
+static VGA16: &[u8; 4096] = include_bytes!("../fonts/vga_8x16.bin");
+static VGA14: &[u8; 3584] = include_bytes!("../fonts/vga_8x14.bin");
+static VGA8: &[u8; 2048] = include_bytes!("../fonts/vga_8x8.bin");
 
 /// A 256-glyph, 8-pixel-wide bitmap font. One byte per glyph row, most significant bit leftmost.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -35,13 +38,19 @@ impl Font {
     /// The EGA / MDA 8x14 font.
     pub fn ega() -> &'static Font {
         static F: OnceLock<Font> = OnceLock::new();
-        F.get_or_init(|| derive14(VGA16))
+        F.get_or_init(|| Font {
+            height: 14,
+            data: VGA14.to_vec(),
+        })
     }
 
     /// The CGA 8x8 font.
     pub fn cga() -> &'static Font {
         static F: OnceLock<Font> = OnceLock::new();
-        F.get_or_init(|| derive8(VGA16))
+        F.get_or_init(|| Font {
+            height: 8,
+            data: VGA8.to_vec(),
+        })
     }
 
     /// The VGA font with the letters replaced by the Standard Galactic Alphabet, the alien
@@ -60,13 +69,13 @@ impl Font {
     /// The SGA font at 8x14, for EGA and Hercules text.
     pub fn sga_ega() -> &'static Font {
         static F: OnceLock<Font> = OnceLock::new();
-        F.get_or_init(|| derive14(&sga16()))
+        F.get_or_init(|| with_sga_letters(Font::ega(), derive14(&sga16())))
     }
 
     /// The SGA font at 8x8, for CGA text and VGA 50-line text.
     pub fn sga_cga() -> &'static Font {
         static F: OnceLock<Font> = OnceLock::new();
-        F.get_or_init(|| derive8(&sga16()))
+        F.get_or_init(|| with_sga_letters(Font::cga(), derive8(&sga16())))
     }
 
     pub fn height(&self) -> u8 {
@@ -88,6 +97,17 @@ impl Font {
     pub fn text_width(&self, s: &str) -> u32 {
         s.chars().count() as u32 * 8
     }
+}
+
+/// `base` with the letters `A`-`Z` and `a`-`z` taken from `sga`.
+fn with_sga_letters(base: &Font, sga: Font) -> Font {
+    let mut f = base.clone();
+    let h = f.height as usize;
+    for ch in (b'A'..=b'Z').chain(b'a'..=b'z') {
+        let r = ch as usize * h..(ch as usize + 1) * h;
+        f.data[r.clone()].copy_from_slice(&sga.data[r]);
+    }
+    f
 }
 
 /// An 8x14 font from an 8x16 one.
@@ -313,6 +333,18 @@ const CP437_HIGH: [char; 128] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sga_fonts_keep_the_rom_glyphs_outside_the_letters() {
+        for (rom, sga) in [
+            (Font::ega(), Font::sga_ega()),
+            (Font::cga(), Font::sga_cga()),
+        ] {
+            assert_eq!(rom.glyph(b'0'), sga.glyph(b'0'));
+            assert_eq!(rom.glyph(0xC9), sga.glyph(0xC9));
+            assert_ne!(rom.glyph(b'A'), sga.glyph(b'A'));
+        }
+    }
 
     #[test]
     fn fonts_have_right_sizes() {

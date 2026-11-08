@@ -265,6 +265,6 @@ cycle accuracy. Simplifications worth knowing:
 
 ## License
 
-EUPL-1.2. The 8x16 font in `crates/dosvideo/fonts/` is derived from `u_vga16.bdf` by Dmitry
-Bolkhovityanov (MIT, see `fonts/LICENSE-vga16.txt`); the 26 glyphs it lacks were drawn for
-this project.
+EUPL-1.2. The VGA BIOS fonts in `crates/dosvideo/fonts/vga_8x*.bin` are `VGA-ROM.F08/F14/F16`
+from fntcol16, the EGA/VGA font collection (c) 1991, 1992 Joseph (Yossi) Gil, whose individual
+fonts are public domain; his notice is preserved in `fonts/COPYLEFT-fntcol16.TXT`.

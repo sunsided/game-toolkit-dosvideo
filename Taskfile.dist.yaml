@@ -253,16 +253,6 @@ tasks:
     cmds:
       - cargo release {{.VERSION}} --execute --no-publish
 
-  font:
-    desc: Regenerate the CP437 8x16 font from the console-setup VGA16 font (needs python3)
-    preconditions:
-      - sh: command -v python3
-        msg: "python3 not found"
-      - sh: test -f /usr/share/consolefonts/Uni2-VGA16.psf.gz
-        msg: "Uni2-VGA16.psf.gz not found — install the console-setup fonts (console-setup-linux)"
-    cmds:
-      - python3 tools/gen_font.py /usr/share/consolefonts/Uni2-VGA16.psf.gz crates/dosvideo/fonts/cp437_8x16.bin
-
   clean:
     desc: Remove build output
     status:
