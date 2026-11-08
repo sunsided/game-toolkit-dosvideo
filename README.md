@@ -245,7 +245,7 @@ task shots               # screenshot every demo headless into target/shots/
 | `svga` | VBE 640x480x8 fill benchmark (banked by pixel, column or row vs. LFB, with bank-switch counts), 640x480 hi-color, and 800x600 panning over a 1600x1200 virtual screen. |
 | `crt_dither` | A true-color scene reduced to EGA, CGA or 256 colors with each dither method, shown through the CRT presets (`Alt+C`) that blend the patterns. `G` switches the captions to the Standard Galactic Alphabet. |
 | `pc_speaker` | The PC speaker: a piano on the keyboard, synthie's `lazy_jones()` reduced to one square wave (`M`, voicings `V`), a QBasic `PLAY` tune (`Q`), frame-rate sound effects and PWM sample playback that freezes the screen (`P`). Needs the `synth` feature. |
-| `text_mode` | An 80x25 TUI: boxes and shadows, blink vs. bright backgrounds, cursor, a custom tile character set loaded into plane 2 (with animated water), the Standard Galactic Alphabet (`G`), and 80x50. |
+| `text_mode` | An 80x25 TUI drawn with ratatui (`ratatui` feature): windows with shadows that drag by the title bar, pull-down menus, the mouse text cursor, blink vs. bright backgrounds, cursor, a custom tile character set loaded into plane 2 (with animated water), the Standard Galactic Alphabet (`G`), and 80x50. |
 
 ## Accuracy
 

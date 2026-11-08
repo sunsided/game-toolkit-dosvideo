@@ -86,7 +86,7 @@ required-features = ["toolkit"]
 
 [[example]]
 name = "text_mode"
-required-features = ["toolkit"]
+required-features = ["toolkit", "ratatui"]
 
 [[example]]
 name = "palette_cycling"

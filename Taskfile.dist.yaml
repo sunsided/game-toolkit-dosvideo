@@ -114,7 +114,7 @@ tasks:
 
   run:text_mode:
     aliases: [run:text-mode]
-    desc: "Demo: 80x25 text TUI: boxes, blink, cursor, custom character set, galactic alphabet"
+    desc: "Demo: 80x25 text TUI with ratatui windows: blink, cursor, custom character set, galactic alphabet"
     cmds:
       - task: run
         vars: {EXAMPLE: text_mode}

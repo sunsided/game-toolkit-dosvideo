@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Headless runs take `DOSVIDEO_MOUSE=frame:x:y:buttons,...` to script the mouse, like
   `DOSVIDEO_KEYS` for keys.
 
+### Changed
+
+- The `text_mode` example draws its windows with ratatui: drag them by the title bar, click
+  to bring one to the front, pull-down menus by mouse or `F10`. It now needs the `ratatui`
+  feature.
+
 ## [0.2.2] - 2026-11-08
 
 ### Added
