@@ -981,7 +981,7 @@ checksum = "76a15bbc5cc7717fffb6332273b5ede534bb48bd7320dff56290ac0b85a72d6f"
 
 [[package]]
 name = "game-toolkit-dosvideo"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "env_logger",
  "game-toolkit",
