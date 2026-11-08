@@ -42,6 +42,8 @@ pub struct DosConfig {
     /// The program's keys as `(key, what it does)`, printed to stdout by [`run`] together
     /// with the host keys, so people know what to press.
     pub keys: Vec<(String, String)>,
+    /// Web only: `id` of an existing `<canvas>` to render into (default: append a new one).
+    pub canvas_id: Option<String>,
 }
 
 impl DosConfig {
@@ -56,7 +58,14 @@ impl DosConfig {
             crt: None,
             max_steps_per_frame: 2000,
             keys: Vec::new(),
+            canvas_id: None,
         }
+    }
+
+    /// Web only: render into the existing `<canvas id="...">` instead of appending one.
+    pub fn with_canvas_id(mut self, id: impl Into<String>) -> Self {
+        self.canvas_id = Some(id.into());
+        self
     }
 
     pub fn with_machine(mut self, m: MachineConfig) -> Self {
@@ -141,6 +150,7 @@ pub fn run<G: DosGame>(config: DosConfig) -> Result<()> {
         title: config.title.clone(),
         width: config.window.0,
         height: config.window.1,
+        canvas_id: config.canvas_id.clone(),
         ..Default::default()
     };
     *PENDING
@@ -251,7 +261,7 @@ fn headless<G: DosGame>(config: DosConfig, path: &str) -> Result<()> {
 fn start_speaker(ctx: &mut Context) -> Option<(SpeakerQueue, StreamHandle)> {
     let audio = ctx.audio.as_mut()?;
     let q = SpeakerQueue::default();
-    q.push(&vec![0.0; SpeakerQueue::PRIME]);
+    q.push(&vec![0.0; SpeakerQueue::TARGET]);
     let feed = q.clone();
     let opts = PlayOptions {
         deferred: true,
@@ -294,36 +304,83 @@ fn wav16(samples: &[f32], rate: u32) -> Vec<u8> {
 
 /// PC speaker samples handed from the emulation (rendered up to the machine clock each host
 /// frame) to the audio thread.
+///
+/// The emulation runs on frame time, the sound card on its own clock. The queue keeps about
+/// [`SpeakerQueue::TARGET`] in flight, and [`SpeakerQueue::trim`] runs the machine a little
+/// faster or slower to hold it there, so the clocks stay locked instead of the queue
+/// overflowing (dropped samples) or running dry (clicks). After running dry it starts over
+/// with a full cushion.
 #[derive(Clone, Default)]
-struct SpeakerQueue(Arc<Mutex<VecDeque<f32>>>);
+struct SpeakerQueue(Arc<Mutex<QueueState>>);
+
+#[derive(Default)]
+struct QueueState {
+    samples: VecDeque<f32>,
+    /// Ran dry since the last push.
+    starved: bool,
+    /// The audio device has asked for samples at least once.
+    started: bool,
+}
 
 impl SpeakerQueue {
-    /// Keep at most this much queued: emulated and real time drift a little, and a backlog
-    /// would only add latency.
-    const MAX: usize = AUDIO_RATE as usize / 6;
-    /// Prime the queue with silence so the first host frames don't underrun.
-    const PRIME: usize = AUDIO_RATE as usize / 20;
+    /// Audio kept in flight: enough to ride out a dropped frame or two.
+    const TARGET: usize = AUDIO_RATE as usize / 10;
+    /// More than this is dropped.
+    const MAX: usize = AUDIO_RATE as usize * 3 / 10;
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, QueueState> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     fn push(&self, samples: &[f32]) {
-        let mut q = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        q.extend(samples);
-        let excess = q.len().saturating_sub(Self::MAX);
-        q.drain(..excess);
+        let mut q = self.lock();
+        if q.starved {
+            q.starved = false;
+            let pad = Self::TARGET.saturating_sub(q.samples.len());
+            q.samples.extend(std::iter::repeat_n(0.0, pad));
+        }
+        q.samples.extend(samples);
+        // Until the device plays, keep only the cushion: whatever plays first must be now.
+        let max = if q.started { Self::MAX } else { Self::TARGET };
+        let excess = q.samples.len().saturating_sub(max);
+        q.samples.drain(..excess);
     }
 
     fn fill(&self, out: &mut [f32]) {
-        let mut q = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut q = self.lock();
+        q.started = true;
         for o in out {
-            *o = q.pop_front().unwrap_or(0.0);
+            *o = q.samples.pop_front().unwrap_or_else(|| {
+                q.starved = true;
+                0.0
+            });
         }
     }
+
+    /// Speed factor for the emulation clock: above one when the queue runs low.
+    fn trim(&self) -> f64 {
+        let q = self.lock();
+        if !q.started {
+            return 1.0;
+        }
+        let error = (Self::TARGET as f64 - q.samples.len() as f64) / Self::TARGET as f64;
+        (1.0 + 0.05 * error).clamp(0.95, 1.05)
+    }
+
+    /// Drop what is queued and rebuild the cushion on the next push.
+    fn restart(&self) {
+        let mut q = self.lock();
+        q.samples.clear();
+        q.starved = true;
+    }
 }
+
+/// How long to hold the power switch for the sound: on the web the toolkit asks the browser
+/// whether audio may start without a click, which takes up to 1.5 s. Waiting lets a tune the
+/// program plays right at startup be heard.
+const POWER_ON_WAIT: f32 = 1.6;
 
 struct Runner<G: DosGame> {
     dos: Dos,
@@ -339,6 +396,8 @@ struct Runner<G: DosGame> {
     /// Where the speaker goes, if audio is available.
     audio: Option<(SpeakerQueue, StreamHandle)>,
     audio_buf: Vec<f32>,
+    /// Seconds waited for the sound before powering on, `None` once the machine runs.
+    power_on_wait: Option<f32>,
 }
 
 impl<G: DosGame> Game for Runner<G> {
@@ -383,6 +442,7 @@ impl<G: DosGame> Game for Runner<G> {
             held: Vec::new(),
             audio: start_speaker(ctx),
             audio_buf: Vec::new(),
+            power_on_wait: Some(0.0),
             window_shot,
         })
     }
@@ -409,7 +469,18 @@ impl<G: DosGame> Game for Runner<G> {
                 .feed_input(&ctx.input, &mut self.dos, ctx.gfx.size());
         }
 
-        self.deadline += dt.clamp(0.0, 0.1) as f64 * 1e9;
+        if let Some(waited) = &mut self.power_on_wait {
+            *waited += dt;
+            let sound = ctx.audio.as_ref().is_none_or(Audio::is_started);
+            if !sound && *waited < POWER_ON_WAIT {
+                return;
+            }
+            self.power_on_wait = None;
+            self.deadline = self.dos.now_ns();
+        }
+
+        let trim = self.audio.as_ref().map_or(1.0, |(q, _)| q.trim());
+        self.deadline += dt.clamp(0.0, 0.1) as f64 * 1e9 * trim;
         let mut steps = 0;
         while self.dos.now_ns() < self.deadline && steps < self.max_steps {
             let before = self.dos.now_ns();
@@ -439,6 +510,17 @@ impl<G: DosGame> Game for Runner<G> {
             self.deadline = self.dos.now_ns();
         }
         if self.dos.now_ns() - self.deadline > 0.5e9 {
+            self.deadline = self.dos.now_ns();
+        }
+    }
+
+    /// The canvas is back on the page: the queue holds audio from before, which would only
+    /// play late, and the machine must not race to catch up.
+    fn event(&mut self, _ctx: &mut Context, e: &GameEvent) {
+        if let GameEvent::CanvasAttached(true) = e {
+            if let Some((q, _)) = &self.audio {
+                q.restart();
+            }
             self.deadline = self.dos.now_ns();
         }
     }
@@ -770,3 +852,36 @@ pub(crate) const KEYMAP: &[(Key, u8)] = &[
     (Key::F11, sc::F11),
     (Key::F12, sc::F12),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn len(q: &SpeakerQueue) -> usize {
+        q.lock().samples.len()
+    }
+
+    #[test]
+    fn speaker_queue_keeps_a_cushion() {
+        let q = SpeakerQueue::default();
+        // Before the device plays, only the cushion is kept, so nothing plays late.
+        q.push(&vec![0.5; SpeakerQueue::MAX * 2]);
+        assert_eq!(len(&q), SpeakerQueue::TARGET);
+        assert_eq!(q.trim(), 1.0, "no steering before the device runs");
+
+        // Running dry re-primes the cushion on the next push.
+        q.fill(&mut vec![0.0; SpeakerQueue::TARGET + 10]);
+        q.push(&[0.5; 10]);
+        assert_eq!(len(&q), SpeakerQueue::TARGET + 10);
+
+        // A running device steers the emulation clock by the fill level.
+        assert!((q.trim() - 1.0).abs() < 0.01);
+        q.push(&vec![0.5; SpeakerQueue::TARGET]);
+        assert!(q.trim() < 1.0, "too full: run the machine slower");
+
+        // Back on the page: stale audio is dropped and the cushion rebuilt.
+        q.restart();
+        q.push(&[0.5; 10]);
+        assert_eq!(len(&q), SpeakerQueue::TARGET + 10);
+    }
+}
