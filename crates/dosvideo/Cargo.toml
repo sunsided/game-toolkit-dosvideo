@@ -31,13 +31,17 @@ default = ["toolkit"]
 toolkit = ["dep:game-toolkit"]
 ## Play synthie tracker songs on the PC speaker (`speaker_synth::SpeakerTracker`).
 synth = ["dep:synthie"]
+## A ratatui `Backend` that draws into text mode (`tui::DosBackend`).
+ratatui = ["dep:ratatui-core"]
 
 [dependencies]
 game-toolkit = { workspace = true, optional = true }
 synthie = { workspace = true, optional = true }
+ratatui-core = { workspace = true, optional = true }
 
 [dev-dependencies]
 env_logger = { workspace = true }
+ratatui = { workspace = true }
 synthie = { workspace = true }
 
 [lints]

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ratatui` feature: `tui::DosBackend`, a ratatui backend that writes cells into text memory
+  (CP437 characters, attribute bytes, the hardware cursor), with `tui::draw` to run a frame
+  inside `DosGame::step`, and `tui::mouse_cell` / `tui::mouse_cursor` for the `INT 33h` text
+  cursor.
+
 ## [0.2.2] - 2026-11-08
 
 ### Added

@@ -27,6 +27,8 @@ uninlined_format_args = "warn"
 [workspace.dependencies]
 game-toolkit = "0.11"
 env_logger = "0.11"
+ratatui-core = { version = "0.1", default-features = false }
+ratatui = { version = "0.30", default-features = false }
 # Same track as game-toolkit's `synth` feature; no audio I/O, just the sequencer.
 synthie = { version = "0.8", default-features = false, features = ["std", "arp"] }
 

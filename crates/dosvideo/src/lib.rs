@@ -68,6 +68,8 @@ pub mod speaker;
 pub mod speaker_synth;
 pub mod svga;
 pub mod text;
+#[cfg(feature = "ratatui")]
+pub mod tui;
 pub mod vga;
 
 #[cfg(feature = "toolkit")]

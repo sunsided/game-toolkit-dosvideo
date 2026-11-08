@@ -216,7 +216,9 @@ a preset. `dos.frame()`
 gives the last complete frame as RGBA anywhere, with `to_png()`.
 
 Features: `toolkit` (default) for the game-toolkit host, `synth` for tracker music on the PC
-speaker. Without the default `toolkit` feature the crate has no dependencies at all: just the machine,
+speaker, `ratatui` for `tui::DosBackend`, a [ratatui](https://ratatui.rs) backend that draws
+widgets into text mode (create a `Terminal` once, call `tui::draw(&mut term, dos, |f| ...)` in
+`step`; only changed cells are written). Without the default `toolkit` feature the crate has no dependencies at all: just the machine,
 for tests or for driving it from another frontend.
 
 ## Demos
