@@ -89,6 +89,10 @@ name = "text_mode"
 required-features = ["toolkit", "ratatui"]
 
 [[example]]
+name = "file_shell"
+required-features = ["toolkit", "ratatui"]
+
+[[example]]
 name = "palette_cycling"
 required-features = ["toolkit"]
 

@@ -119,6 +119,13 @@ tasks:
       - task: run
         vars: {EXAMPLE: text_mode}
 
+  run:file_shell:
+    aliases: [run:file-shell]
+    desc: "Demo: DOS-style file shell from ratatui widgets: tree, file list, menus, dialogs, mouse"
+    cmds:
+      - task: run
+        vars: {EXAMPLE: file_shell}
+
   examples:
     desc: List the demos
     silent: true
