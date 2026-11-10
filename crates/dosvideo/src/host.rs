@@ -148,17 +148,25 @@ pub fn run<G: DosGame>(config: DosConfig) -> Result<()> {
         return headless::<G>(config, &path);
     }
     print_keys(&config);
-    let app = AppConfig {
-        title: config.title.clone(),
-        width: config.window.0,
-        height: config.window.1,
-        canvas_id: config.canvas_id.clone(),
-        ..Default::default()
-    };
+    let app = app_config(&config);
     *PENDING
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(config);
     game_toolkit::prelude::run::<Runner<G>>(app)
+}
+
+/// The toolkit's app settings for `config`.
+fn app_config(config: &DosConfig) -> AppConfig {
+    AppConfig {
+        title: config.title.clone(),
+        width: config.window.0,
+        height: config.window.1,
+        canvas_id: config.canvas_id.clone(),
+        // A DOS program loads no files through the toolkit's assets. Without a list the web
+        // build fetches `assets/manifest.txt` beside the page, a 404 for every game.
+        web_preload: Some(Vec::new()),
+        ..Default::default()
+    }
 }
 
 /// The key table printed at startup.
@@ -901,6 +909,14 @@ pub(crate) const KEYMAP: &[(Key, u8)] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The web build preloads nothing, rather than fetching an `assets/manifest.txt` that no
+    /// DOS program has.
+    #[test]
+    fn the_web_build_fetches_no_asset_manifest() {
+        let app = app_config(&DosConfig::new("T", Adapter::Vga));
+        assert_eq!(app.web_preload, Some(Vec::new()));
+    }
 
     /// A press and release that both land between two frames (a quick click, a trackpad
     /// tap) still counts as one press, and only once.

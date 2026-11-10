@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The web build no longer fetches `assets/manifest.txt` on start: a DOS program loads no
+  files through the toolkit's assets, so `run` now preloads nothing instead of asking for a
+  manifest, which was a 404 for every game and on every host page.
+
 ## [0.3.1] - 2026-11-10
 
 ### Fixed
