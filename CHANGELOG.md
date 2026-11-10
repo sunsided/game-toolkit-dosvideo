@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A mouse click whose press and release both fall between two frames (a quick click, a
+  trackpad tap) was lost: the `INT 33h` driver counted presses from the held state sampled once
+  per frame. A button pressed during the frame now counts as held for it, so `take_presses`
+  sees the press.
+
 ## [0.3.0] - 2026-11-08
 
 ### Added

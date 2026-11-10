@@ -778,14 +778,18 @@ impl DosScreen {
             let (mx, my) = input.mouse_pos();
             dos.mouse_mut().set_normalized((mx - x) / w, (my - y) / h);
         }
+        // A click can go down and up between two frames (a quick click, a trackpad tap). The
+        // driver counts presses from held-state changes, so a button pressed this frame
+        // counts as held for it; the next frame then sees the release.
+        let down = |b| input.mouse_held(b) || input.mouse_pressed(b);
         let mut b = 0;
-        if input.mouse_held(MouseButton::Left) {
+        if down(MouseButton::Left) {
             b |= 1;
         }
-        if input.mouse_held(MouseButton::Right) {
+        if down(MouseButton::Right) {
             b |= 2;
         }
-        if input.mouse_held(MouseButton::Middle) {
+        if down(MouseButton::Middle) {
             b |= 4;
         }
         dos.mouse_mut().set_buttons(b);
@@ -897,6 +901,30 @@ pub(crate) const KEYMAP: &[(Key, u8)] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A press and release that both land between two frames (a quick click, a trackpad
+    /// tap) still counts as one press, and only once.
+    #[test]
+    fn a_click_within_one_frame_counts_once() {
+        use winit::event::{DeviceId, ElementState, WindowEvent};
+        let mut input = Input::new();
+        for state in [ElementState::Pressed, ElementState::Released] {
+            input.handle_window_event(&WindowEvent::MouseInput {
+                device_id: DeviceId::dummy(),
+                state,
+                button: winit::event::MouseButton::Left,
+            });
+        }
+        let mut dos = Dos::new(MachineConfig::default().with_bus(BusTiming::INSTANT));
+        let screen = DosScreen::new();
+
+        screen.feed_input(&input, &mut dos, (640, 480));
+        assert_eq!(dos.mouse_mut().take_presses(0), 1);
+
+        input.end_frame();
+        screen.feed_input(&input, &mut dos, (640, 480));
+        assert_eq!(dos.mouse_mut().take_presses(0), 0);
+    }
 
     fn len(q: &SpeakerQueue) -> usize {
         q.lock().samples.len()
