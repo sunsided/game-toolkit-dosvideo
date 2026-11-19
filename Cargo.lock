@@ -902,9 +902,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit"
-version = "0.11.0"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95806192de52c20565309e32badea0d72d9fbafa68d79db5be29c9521dbec436"
+checksum = "d612806026cf40b082ed311bdfa1615bbe1b7e0f695c91223e651247672ce53a"
 dependencies = [
  "anyhow",
  "game-toolkit-assets",
@@ -917,9 +917,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-assets"
-version = "0.11.0"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff2b87713733c056e59058713b4af0b57a1b87219e5f5e1892925f46db265e18"
+checksum = "f146e5e070448be0aca934d8dd8d2a54d2f15dbedfb99a850ba20fc01d443170"
 dependencies = [
  "anyhow",
  "js-sys",
@@ -932,9 +932,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-audio"
-version = "0.11.0"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71ec24b580c36fed119583d6170f6d21519855325c7fde25cbadc530ab1388ee"
+checksum = "02031ba2ef948b1f223e058e05938cb5c619bcb71cd9ec032080b2c4465ebd85"
 dependencies = [
  "anyhow",
  "kira",
@@ -943,9 +943,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-core"
-version = "0.11.0"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f86e4c3f2dc186316008e4390fd700d1755274e392feffa6bf2a44c62be97423"
+checksum = "1dc41c8a26085cb94e8a663cdd9af558a19902c29c2b06ff9e28bf9818d175f8"
 dependencies = [
  "anyhow",
  "game-toolkit-assets",
@@ -994,9 +994,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-gfx"
-version = "0.11.0"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "959dc2e93c485bae03cf0a4fee65fd644632d7d7a531884f38ad19152d9bd034"
+checksum = "3f7cacec30fe59503e1f8495b3a578614f1b12a9bf389a19fe1866232c9437aa"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1011,9 +1011,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-input"
-version = "0.11.0"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f70b1c727a44d6948d5b015201e55af317bfcefbf743506c5fec33489d019194"
+checksum = "61e5e7c86d86942f5bd4028d396755ae30cc5c1dfc312042903888cb05acc8d8"
 dependencies = [
  "gilrs",
  "log",
