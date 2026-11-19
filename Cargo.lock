@@ -965,9 +965,9 @@ dependencies = [
 
 [[package]]
 name = "game-toolkit-dosaudio"
-version = "0.1.3"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1f018a3a01ee363c5d7959ebd9c544e58f5aa07b4b736cabe9c3f885d133149"
+checksum = "b89d0a96ad414800878cf26f453369cc0bb95ceb49dcde82328930dccc3901e2"
 dependencies = [
  "game-toolkit-dosbus",
  "rtrb",
